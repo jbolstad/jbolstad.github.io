@@ -1,0 +1,60 @@
+---
+title: "The Problem with Google’s Journal Rankings"
+subtitle: "Why they should not be used to assess research quality"
+author: "Jørgen Bølstad"
+output: html_document
+type: "post"
+draft: false
+date: 2020-02-25
+tags: ["Academia"]
+---
+
+
+
+<p>I keep seeing Google’s journal rankings being used to measure research quality, and I want to explain why I think this is a bad idea. One could, of course, argue that citations do not reflect research quality anyway and therefore are of little relevance, but that is not the point I want to make here. I will simply run a small set of simulations to illustrate a key problem with how Google’s h-index is being used.</p>
+<div id="the-h-index" class="section level3">
+<h3>The h-index</h3>
+<p>Google calculates the h-index for scholars and journals alike. For a given set of articles, the h-index is “the largest number h such that h articles have at least h citations each”. This means we can calculate it as follows:</p>
+<pre class="r"><code>h.index = function(citations) {
+  citations = citations[order(citations, decreasing = TRUE)]
+  tail(which(citations &gt;= seq_along(citations)), 1)
+}</code></pre>
+<p>To rank journals, Google uses the h5-index, which is an h-index based on the articles published by a journal in the last 5 complete years. If we were solely interested in a <em>journal’s</em> impact over these 5 years, this could possibly be an acceptable measure. However, Google’s ranking of journals is often assumed to reflect the general quality or impact of the <em>articles</em> that are published in these journals – which is a very different thing.</p>
+</div>
+<div id="simulation-setup" class="section level3">
+<h3>Simulation setup</h3>
+<p>To see the distinction, let’s run a small set of simulations comparing three journals that differ in the number of articles they publish:</p>
+<ul>
+<li>Journal 1 publishes 12 issues per year and 15 articles (or other citable items) per issue, which over 5 years gives 900 articles.</li>
+<li>Journal 2 publishes 10 issues per year and 8 articles (or other citable items) per issue, which over 5 years gives 400 articles.</li>
+<li>Journal 3 publishes 4 issues per year and 8 articles (or other citable items) per issue, which over 5 years gives 160 articles.</li>
+</ul>
+<p>In addition, the journals differ in the average impact of the articles they publish:</p>
+<ul>
+<li>Journal 1 and 2 publish articles with the same tendency to get cited.</li>
+<li>Journal 3 publishes articles with a higher tendency to get cited.</li>
+</ul>
+<p>Here’s a function to generate data that fit this description:</p>
+<pre class="r"><code>gen.dat &lt;- function() {
+  list(journal1 = rnbinom(5 * 12 * 15, 1, prob = .05), 
+       journal2 = rnbinom(5 * 10 * 8, 1, prob = .05), 
+       journal3 = rnbinom(5 * 4 * 8, 1, prob = .04))
+}</code></pre>
+<p>Now, let’s generate 1000 datasets and calculate the average number of citations per article as well as the h-index for each journal:</p>
+<pre class="r"><code>results &lt;- vector()
+for (i in 1:1000) {
+  x &lt;- gen.dat()
+  results &lt;- rbind(results, cbind(sapply(x, h.index), sapply(x, mean)))
+}</code></pre>
+</div>
+<div id="results" class="section level3">
+<h3>Results</h3>
+<p>In line with the data-generating process above, the plot below shows that Journal 3 publishes articles with a higher tendency to get cited. However, if we turn to the h5-index, Journal 1 scores the highest, followed by Journal 2. As noted above, Journal 2 publishes articles with the same average impact as Journal 1, but it publishes fewer of them, and this results in a lower h5-index. Journal 3, which publishes articles with the highest average impact, gets the lowest h5-index due to its lower publication volume.</p>
+<p><img src="/post/Problem_Google_journal_ranking_files/figure-html/unnamed-chunk-2-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+</div>
+<div id="final-notes" class="section level3">
+<h3>Final notes</h3>
+<p>If we want to assess the impact or quality of the articles published by a journal, it makes little sense to use a measure that gets inflated (or constrained) by the number of articles the journal publishes. In fact, publishing fewer articles should (all else equal) make a journal more selective and thus increase the quality of what it publishes.</p>
+<p>To see how absurd this could possibly get, imagine we created a journal that at the end of each decade published one article presenting the single most important discovery of that decade. These articles might rack up many thousands of citations each, and the journal could be the most prestigious in the world, but its h5-index would never exceed 1. It would be beaten by pretty much any other journal. At the other extreme, a good strategy for achieving a high h5-index is to publish as much as possible and hope something sticks – not exactly the definition of a high-quality journal.</p>
+<p>If we are looking for a measure of the average impact of the articles in a given journal, good old-fashioned impact factors are more valid. But even better is Scimago’s approach, as they weight the citations based on where they originate. Then we are getting closer to something meaningful, although I do believe we should be using data covering longer time periods than 2-3 years: If we are trying to capture something we believe is fairly stable, and our indicator shifts around every year, this suggests we are capturing a lot of noise, doesn’t it?</p>
+</div>

@@ -1,0 +1,285 @@
+---
+title: "The Basics of Bayesian Inference"
+subtitle: "Evaluating continuous distributions over a grid in R"
+author: "Jørgen Bølstad"
+type: "post"
+draft: false
+date: 2018-07-22
+tags: ["R", "Bayesian statistics"]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=7.35, fig.height=3.5, fig.align="left", dev="svg") 
+library(ggplot2)
+library(reshape2)
+source("../../knit-data/colors.R")
+```
+The goal of data analysis is typically to learn (more) about some unknown features of the world, and Bayesian inference offers a consistent framework for doing so. This framework is particularly useful when we have noisy, limited, or hierarchical data -- or very complicated models. You may be aware of Bayes' theorem, which states that *the posterior is proportional to the likelihood times the prior*. But what does that mean? This post offers a very basic introduction to key concepts in Bayesian statistics, with illustrations in R. 
+
+This will be a hands-on discussion, so we will start by setting up a relevant example. Say we are interested in estimating a latent trait of a single individual, and denote this trait with the Greek letter mu, $\mu$. We have three noisy measurements of this trait, stored as the variable $y$. We do not have data for other individuals at hand, but we know that the $\mu$'s in the whole population are normally distributed around a mean of $-1$ with a standard deviation of $1.5$. A key feature of the Bayesian framework is that it lets us use this information to get a less noisy estimate of $\mu$.
+
+To get started, let us create some data that fit the description above. We will let the measurement errors be normally distributed with a standard deviation of 2, and give $\mu$ the value 1, which is reasonably probable in light of the population distribution. To generate normally distributed data, we use the R function `rnorm`:
+```{r data}
+set.seed(4)                 # Set seed for reproducibility
+n <- 3                      # Set number of observations
+y <- rnorm(n, mean = 1, sd = 2) # Generate data
+y                           # Take a look at the data
+```
+
+### The prior
+To perform a Bayesian analysis, we need to specify our prior: $p(\mu)$. That is, our beliefs about the parameter before having examined the new data. As we are dealing with a continuous variable in this case, our prior will be a continuous probability distribution. More specifically, without any additional knowledge of the individual in question, we will let our prior reflect our knowledge about the population distribution: We believe $\mu$ is drawn from a normal distribution with mean $-1$ and standard deviation $1.5$: $p(\mu) \sim N(-1,1.5^2)$. (We square the standard deviation to specify the distribution in terms of its variance).
+
+
+Our prior thus looks like this:
+
+```{r prior_illustration, fig.height=3.5, echo=F, cache=FALSE}
+res <- 1 / 100
+mu.h <- seq(-10,10,res) 
+prior <- dnorm(mu.h,mean=-1,sd=1.5)
+
+df <- data.frame(mu.h,prior)
+df <- melt(df,measure.vars=c("prior"),id.vars="mu.h")
+p <- ggplot(df,aes(mu.h,value,fill=variable)) + geom_polygon(alpha=.4) + geom_line(color="black",alpha=.3) + th +  guides(fill="none") + scale_fill_manual(values = col.trans[c(1,3,2),5]) +
+labs(y = "Probability density",fill="") + theme(legend.position = "bottom", axis.title.x=element_blank())
+
+p 
+```
+
+To keep things simple and intuitive, we will assess our distributions (i.e. prior, likelihood, posterior) at equally spaced points (essentially treating them as categorical distributions). We thus define a sequence of potential values that $\mu$ could have, and for each specific value approximate the probability that $\mu$ actually lies within a narrow interval around this point. Specifically, we will divide the scale into intervals of length $.01$.
+
+To define our prior in R, we use the probability density function (PDF) of the normal distribution, `dnorm`:
+```{r prior, cache=TRUE}
+res <- 1 / 100              # Set resolution for the sequence of potential mu-values
+mu.h <- seq(-10, 10, res)   # Define values at which to assess the probability density
+density <- dnorm(mu.h, mean = -1, sd = 1.5) # Get the density for each value in mu.h
+prior <- density * res      # Multiply with resolution to get probability per interval
+```
+```{r inspect}
+sum(prior)                  # Our prior probabilities now sum to 1
+mu.h[1:5]                   # Inspect the first 5 values of mu.h
+prior[1:5]                  # Inspect the corresponding values of the prior
+```
+```{r}
+# For a basic plot of the prior density, run: plot(mu.h,prior/res,type="l",ylab="",lty=3)
+```
+
+### The likelihood
+Next, we need to define the likelihood function, which gives the probability of observing our data for given a parameter value: $p(y|\mu)$. To keep things simple, let us say we know that the procedure generating our measurements entails normally distributed errors with a standard deviation of 2. For a single observation, $y_i$, the likelihood is then: $p(y_i|\mu) = N(y_i|\mu,2^2)$. The likelihood for the whole dataset is the product of all the individual likelihoods: 
+$$p(y|\mu) = \prod^n_{i=1} N(y_i|\mu,2^2)$$
+
+
+Having specified the likelihood function, we can calculate the likelihood across the set of potential values for $\mu$. An intuitive way to do this is to use loops:
+```{r likelihood, cache=TRUE}
+likelihood <- vector()      # Create an empty vector
+for (s in mu.h) {           # Loop over each value in mu.h
+  temp.lik <- 1             # Create a temporary likelihood scalar
+  for (i in 1:n) {          # Loop over each individual data point
+    temp.lik <- temp.lik * dnorm(y[i], mean = s, sd = 2) # Multiply individual likelihoods
+  }
+  likelihood <- c(likelihood, temp.lik) # Store the likelihood for each value in mu.h
+}
+```
+However, it is more efficient to use vectorized operations and achieve the same result:
+```{r, cache=TRUE}
+likelihood <- sapply(mu.h, function(s) prod(dnorm(y, s, 2)) )
+```
+
+It is worth noting we assess the likelihood across different parameter values while keeping the data fixed. This means that the likelihood is not a probability density function that necessarily integrates (or sums) to 1 (in contrast to the prior specified above). However, to plot the likelihood on the same scale as the prior and the posterior distributions, it is useful also to calculate a normalized version that does sum to 1:
+
+```{r}
+normalized.likelihood <- likelihood / sum(likelihood)
+```
+
+
+### The posterior
+Now, we can finally turn to the posterior distribution, which represents our updated beliefs about the parameter after having observed the data: $p(\mu|y)$. As we know from Bayes' theorem, we can obtain a distribution that is proportional ("$\propto$") to the posterior by multiplying the likelihood and the prior: $$p(\mu|y) \propto p(y|\mu)p(\mu)$$
+In R, this means:
+```{r}
+unnormalized.posterior <- likelihood * prior
+```
+We can normalize this distribution to sum to 1 by multiplying it with a normalizing constant (although this constant will typically be unknown):
+```{r}
+normalizing.constant <- 1 / sum(likelihood * prior)
+posterior <- unnormalized.posterior * normalizing.constant
+```
+
+For each value in our set of potential $\mu$-values, we now have a posterior probability that $\mu$ indeed lies in a .01-interval around this point. To plot the distributions as approximate probability densities, we can divide them by .01 before plotting. This gives the following result:
+
+```{r bayes, echo=FALSE, message=FALSE}
+df <- data.frame(mu.h,prior,normalized.likelihood,posterior)
+df[,2:4] <- df[,2:4] / res # Transforming to get same scale as continuous density 
+df <- melt(df,measure.vars=c("prior","normalized.likelihood","posterior"),id.vars="mu.h")
+levels(df$variable) <- c("Prior", "Likelihood (normalized)", "Posterior")
+p <- ggplot(df,aes(mu.h,value,fill=variable)) + geom_polygon() + geom_line(color="black",alpha=.3) + 
+    scale_fill_manual(labels = c(expression(paste("Prior, ", p(mu),sep="")), 
+                                 expression(paste("Likelihood (normalized), p(y|",mu,")",sep="")), 
+                                 expression(paste("Posterior, p(",mu,"|y)",sep=""))), 
+                      values = col.trans[c(1,3,2),5]) + 
+labs(y = "Probability density", fill="") + theme(legend.position = "bottom", axis.title.x=element_blank())
+p 
+```
+
+What do we see here? Because we only have three observations for the individual in question, we get a fairly wide likelihood, which allows the posterior to be drawn towards the prior. Put differently, we do not have enough information to conclude that $\mu$ is as far from the population mean as the likelihood would suggest. If we wanted greater certainty, we could go collect more data and get a narrower likelihood distribution.
+
+```{r}
+# For a basic version of the plot above, run: plot(mu.h, posterior / res, type = "l", ylab = ""); lines(mu.h, normalized.likelihood / res, lty = 2); lines(mu.h, prior / res, lty = 3)
+```
+
+## Estimating two parameters
+Above, we simplified by assuming that we knew the standard deviation of the errors in our data. That is not a very common situation, so let us try to estimate both the mean, $\mu$, and the standard deviation, $\sigma$. The standard deviation must be positive, so we will consider its probability distribution over a set of positive values. To keep things simple, let us give $\sigma$ a flat prior over the range from 0 to 10, using a uniform distribution: $p(\sigma) \sim U(0,10)$. To do this in R, we use the density function `dunif`: 
+```{r twopar, cache=TRUE}
+sigma.h <- seq(0, 10, res)    # Define values at which to assess the probabilities for sigma
+sigma.density <- dunif(sigma.h, min(sigma.h), max(sigma.h)) # Density-values for a flat prior
+sigma.prior <- sigma.density * res # Multiply with res to get probability per interval
+mu.prior <- prior           # Use the same prior for mu as in the previous example
+```
+### The joint prior
+Now that we have specified priors for $\mu$ and $\sigma$, we can also specify their joint prior distribution, $p(\mu,\sigma)$. For a given pair of potential values -- one for $\mu$ and one for $\sigma$ -- this gives us the prior probability that $\mu$ and $\sigma$ are each (approximately) equal to their respective value in this pair. Because we have specified the priors for $\mu$ and $\sigma$ independently (i.e. no covariation), the joint prior distribution is in this case simply:
+$$p(\mu,\sigma) = p(\mu)p(\sigma)$$
+To get the joint prior in R, we can thus write:
+```{r, cache=TRUE}
+joint.prior <- sapply(mu.prior, function(mu.s) { # Using sapply's instead of loops
+                sapply(sigma.prior, function(sigma.s) { mu.s * sigma.s })})
+```
+This gives us a two-dimensional grid of probabilities, representing all possible combinations of $\mu$ and $\sigma$ values that we are considering. Note, however, that the columns in this grid are constant, due to the flat prior on $\sigma$:
+```{r}
+joint.prior[1:5,1:5]        # Inspect the first 5x5 entries
+```
+
+### The joint likelihood
+Our likelihood function still looks much like before, but it now gives the probability of the data given two parameters instead of one. For a single observation, $y_i$, the likelihood is now: $p(y_i|\mu,\sigma) = N(y_i|\mu,\sigma^2)$. As before, the likelihood for the whole dataset is the product of all the individual likelihoods: 
+
+$$p(y|\mu,\sigma) = \prod^n_{i=1} N(y_i|\mu,\sigma^2)$$
+
+If we calculate the likelihood across the possible combinations of values for $\mu$ and $\sigma$, we now get a two-dimensional grid. To do so in R, we run:
+```{r, cache=TRUE}
+joint.likelihood <- sapply(mu.h, function(mu.s) { # Sapply's instead of loops
+                      sapply(sigma.h, function(sigma.s) { prod(dnorm(y, mu.s, sigma.s)) })})
+normalized.joint.likelihood <- joint.likelihood / sum(joint.likelihood) # Normalize 
+```
+### The joint posterior
+The posterior distribution is now a joint distribution for our two parameters. Adapting Bayes' theorem to this case, we get:
+
+$$p(\mu,\sigma|y) \propto p(y|\mu,\sigma)p(\mu,\sigma)$$
+
+This is easy to calculate in R:
+```{r jointposterior, cache=TRUE}
+unnormalized.joint.posterior <- joint.likelihood * joint.prior
+normalizing.constant <- 1 / sum(joint.likelihood * joint.prior)
+joint.posterior <- unnormalized.joint.posterior * normalizing.constant
+```
+
+Instead of looking directly at the resulting two-dimensional set of probabilities, we can use a contour plot:
+
+```{r bivariate_dist, echo=FALSE, message=FALSE, cache=FALSE}
+rownames(joint.posterior) <- sigma.h
+colnames(joint.posterior) <- mu.h
+df <- melt(joint.posterior)
+df[,3] <- df[,3] / res # Transforming to get same scale as continuous density 
+names(df) <- c("sigma","mu","Probability density")
+
+v <- ggplot(df, aes(mu, sigma, z = `Probability density`, fill=..level..)) + th + stat_contour(geom="polygon", alpha=.2, bins=20) + 
+  scale_fill_gradient(low = col.trans[2,5], high = col.solid[2,5]) + 
+  guides(fill="none") + 
+  xlim(min(mu.h),max(mu.h)) + ylim(min(sigma.h),max(sigma.h)) + labs(x = expression(mu), y = expression(sigma), fill="posterior probability") + theme(legend.position = "bottom") + th
+v
+```
+
+What do we see here? There is some covariation between the parameters in the joint posterior distribution: When $\sigma$ is large, the likelihood gets wider, so the posterior probabilities for $\mu$ get drawn more strongly towards the prior.
+
+```{r}
+# For a basic version of the plot above, run: contour(mu.h,sigma.h,t(joint.posterior))
+```
+
+
+### Marginal distributions
+While the joint posterior may be useful, we often want to draw conclusions about the values of a given parameter without reference to the other parameter(s) in the model. The way to obtain a posterior distribution for a single parameter -- a marginal posterior distribution -- is to average the joint distribution over the parameter(s) we want to leave aside. In other words, to get the marginal posterior for $\mu$, $p(\mu|y)$, we integrate the joint posterior over $\sigma$:
+$$ p(\mu|y) = \int p(\mu,\sigma |y)d(\sigma)$$
+In our case, we have already simplified this task by effectively turning our continuous distributions into categorical ones. This makes it easy to approximate the integral by summing the posterior probabilities in our grid for each potential value of $\sigma$. Because our grid has a row for each potential value of $\sigma$, we sum the probabilities in each column (across all rows) to get the marginal probabilities for $\mu$:
+```{r}
+mu.marginal.posterior <- colSums(joint.posterior)
+```
+We can also do the same for the normalized likelihood:
+```{r}
+mu.marginal.norm.likelihood <- colSums(normalized.joint.likelihood)
+```
+
+
+The resulting distributions look like this:
+
+```{r marginal_mu, echo=FALSE, message=FALSE}
+df <- data.frame(mu.h,mu.prior,mu.marginal.norm.likelihood,mu.marginal.posterior)
+df[,2:4] <- df[,2:4] / res # Transforming to get same scale as continuous density 
+df[nrow(df),2:4] <- 0 # Setting to zero for plotting the area
+df[1,2:4] <- 0
+df <- melt(df,measure.vars=c("mu.prior","mu.marginal.norm.likelihood","mu.marginal.posterior"),id.vars="mu.h")
+p <- ggplot(df,aes(mu.h,value,fill=variable)) + geom_polygon() + geom_line(color="black",alpha=.3) +      scale_fill_manual(labels = c(expression(paste("Prior, ", p(mu),sep="")), 
+                                 expression(paste("Marginal likelihood (normalized), p(y|",mu,")",sep="")), 
+                                 expression(paste("Marginal posterior, p(",mu,"|y)",sep=""))), 
+                      values = col.trans[c(1,3,2),5]) + 
+  labs(y = "Probability density", fill="") + theme(legend.position = "bottom", axis.title.x=element_blank())
+p
+```
+
+We see that estimating $\sigma$ and giving it a flat prior has resulted in a likelihood with much fatter tails than earlier, which in turn has changed the shape of the posterior distribution for $\mu$.
+
+```{r}
+# For a basic version of this plot, run: plot(mu.h,mu.marginal.norm.likelihood/res,type="l",ylab="",lty=2); lines(mu.h,mu.marginal.posterior/res,lty=1); lines(mu.h,mu.prior/res,lty=3)
+```
+
+For $\sigma$, the marginal distributions are as follows:
+
+```{r}
+sigma.marginal.posterior <- rowSums(joint.posterior)
+sigma.marginal.norm.likelihood <- rowSums(normalized.joint.likelihood)
+```
+
+```{r marginal_sigma, echo=FALSE, message=FALSE}
+df <- data.frame(sigma.h,sigma.prior,sigma.marginal.norm.likelihood,sigma.marginal.posterior)
+df[,2:4] <- df[,2:4] / res # Transforming to get same scale as continuous density 
+df[nrow(df),2:4] <- 0 # Setting to zero for plotting the area
+df[1,2:4] <- 0
+df <- melt(df,measure.vars=c("sigma.prior","sigma.marginal.norm.likelihood","sigma.marginal.posterior"),id.vars="sigma.h")
+p <- ggplot(df,aes(sigma.h,value,fill=variable)) + geom_polygon(alpha=.4) + geom_line(color="black",alpha=.3) +      scale_fill_manual(labels = c(expression(paste("Prior, ", p(sigma),sep="")), 
+                                 expression(paste("Marginal likelihood (normalized), p(y|",sigma,")",sep="")), 
+                                 expression(paste("Marginal posterior, p(",sigma,"|y)",sep=""))), 
+                      values = col.trans[c(1,3,2),5]) + 
+  labs(y = "Probability density", fill="") + theme(legend.position = "bottom", axis.title.x=element_blank())
+p
+```
+
+
+```{r}
+# For a basic version of this plot, run: plot(sigma.h,sigma.marginal.norm.likelihood/res,type="l",ylab="",lty=2); lines(sigma.h,sigma.marginal.posterior/res,lty=1); lines(sigma.h,sigma.prior/res,lty=3)
+```
+
+### Final notes
+The approach used here (calculating joint probability distributions over a grid) was chosen because it permits illustrating key Bayesian concepts without using too much math. However, the grid-approach is not one we would typically use in actual analyses. One reason is that simple models like the one we have here often can be solved analytically by using conjugate priors (which can be very neat). Another reason is that the grid-approach is ill-suited for more complicated problems, as the number of elements in the grid increases exponentially with the number of parameters: With two parameters, and considering $1,000$ potential values for each, we get a grid with $1,000^2 = 1,000,000$ elements. With $50$ parameters, we get: $1,000^{50}$. For such problems, we would normally sample from the posterior distribution using a form of Markov Chain Monte Carlo (MCMC) -- which is the topic of my <a href="http://www.boelstad.net/post/mcmc_sampling_introduction/">next post</a>. For actual MCMC analyses, I recommend having a look at Stan: <a href="http://www.mc-stan.org" target="_blank">http://www.mc-stan.org</a>.
+
+
+### How to cite
+<p>This material can be cited as follows:</p>
+<div class="Bib">
+<p>Bølstad, Jørgen. 2018. "The Basics of Bayesian Inference: Evaluating Continuous Distributions over a Grid in R". <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/bayesian_statistics_introduction/.</p>
+</div>
+
+Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:
+```{plaintext,eval=FALSE,highlight=FALSE}
+@Misc{boelstad:2018a,
+  Author = {B{\o}lstad, J{\o}rgen},
+  Title = {The Basics of Bayesian Inference: Evaluating Continuous Distributions over a Grid in R},
+  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  Url = {\url{http://www.boelstad.net/post/bayesian_statistics_introduction/}},
+  Year = {2018},
+  Month = {July 22}}
+```
+
+
+### Further reading
+<div class="Bib">
+<p>Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman & Hall/CRC Press.</p>
+<p>McElreath, Richard. 2016. <i>Statistical Rethinking: A Bayesian Course with Examples in R and Stan.</i> London: Chapman & Hall/CRC Press.</p>
+</div>
+
+

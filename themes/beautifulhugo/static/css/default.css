@@ -1,0 +1,22 @@
+.hljs{display:contents;overflow-x:auto;padding:0em}
+.hljs-literal {
+  color: #990073;
+}
+
+.hljs-number {
+  color: #008080;
+}
+
+.hljs-comment {
+  color: #998;
+  font-style: italic;
+}
+
+.hljs-keyword {
+  color: #333;
+  font-weight: bold;
+}
+
+.hljs-string {
+  color: #d14;
+}

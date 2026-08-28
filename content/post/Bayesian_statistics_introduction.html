@@ -1,0 +1,166 @@
+---
+title: "The Basics of Bayesian Inference"
+subtitle: "Evaluating continuous distributions over a grid in R"
+author: "Jørgen Bølstad"
+type: "post"
+draft: false
+date: 2018-07-22
+tags: ["R", "Bayesian statistics"]
+---
+
+
+<p>The goal of data analysis is typically to learn (more) about some unknown features of the world, and Bayesian inference offers a consistent framework for doing so. This framework is particularly useful when we have noisy, limited, or hierarchical data – or very complicated models. You may be aware of Bayes’ theorem, which states that <em>the posterior is proportional to the likelihood times the prior</em>. But what does that mean? This post offers a very basic introduction to key concepts in Bayesian statistics, with illustrations in R.</p>
+<p>This will be a hands-on discussion, so we will start by setting up a relevant example. Say we are interested in estimating a latent trait of a single individual, and denote this trait with the Greek letter mu, <span class="math inline">\(\mu\)</span>. We have three noisy measurements of this trait, stored as the variable <span class="math inline">\(y\)</span>. We do not have data for other individuals at hand, but we know that the <span class="math inline">\(\mu\)</span>’s in the whole population are normally distributed around a mean of <span class="math inline">\(-1\)</span> with a standard deviation of <span class="math inline">\(1.5\)</span>. A key feature of the Bayesian framework is that it lets us use this information to get a less noisy estimate of <span class="math inline">\(\mu\)</span>.</p>
+<p>To get started, let us create some data that fit the description above. We will let the measurement errors be normally distributed with a standard deviation of 2, and give <span class="math inline">\(\mu\)</span> the value 1, which is reasonably probable in light of the population distribution. To generate normally distributed data, we use the R function <code>rnorm</code>:</p>
+<pre class="r"><code>set.seed(4)                 # Set seed for reproducibility
+n &lt;- 3                      # Set number of observations
+y &lt;- rnorm(n, mean = 1, sd = 2) # Generate data
+y                           # Take a look at the data</code></pre>
+<pre><code>## [1]  1.43350973 -0.08498514  2.78228929</code></pre>
+<div id="the-prior" class="section level3">
+<h3>The prior</h3>
+<p>To perform a Bayesian analysis, we need to specify our prior: <span class="math inline">\(p(\mu)\)</span>. That is, our beliefs about the parameter before having examined the new data. As we are dealing with a continuous variable in this case, our prior will be a continuous probability distribution. More specifically, without any additional knowledge of the individual in question, we will let our prior reflect our knowledge about the population distribution: We believe <span class="math inline">\(\mu\)</span> is drawn from a normal distribution with mean <span class="math inline">\(-1\)</span> and standard deviation <span class="math inline">\(1.5\)</span>: <span class="math inline">\(p(\mu) \sim N(-1,1.5^2)\)</span>. (We square the standard deviation to specify the distribution in terms of its variance). </p>
+<p>Our prior thus looks like this:</p>
+<p><img src="/post/Bayesian_statistics_introduction_files/figure-html/prior_illustration-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>To keep things simple and intuitive, we will assess our distributions (i.e. prior, likelihood, posterior) at equally spaced points (essentially treating them as categorical distributions). We thus define a sequence of potential values that <span class="math inline">\(\mu\)</span> could have, and for each specific value approximate the probability that <span class="math inline">\(\mu\)</span> actually lies within a narrow interval around this point. Specifically, we will divide the scale into intervals of length <span class="math inline">\(.01\)</span>.</p>
+<p>To define our prior in R, we use the probability density function (PDF) of the normal distribution, <code>dnorm</code>:</p>
+<pre class="r"><code>res &lt;- 1 / 100              # Set resolution for the sequence of potential mu-values
+mu.h &lt;- seq(-10, 10, res)   # Define values at which to assess the probability density
+density &lt;- dnorm(mu.h, mean = -1, sd = 1.5) # Get the density for each value in mu.h
+prior &lt;- density * res      # Multiply with resolution to get probability per interval</code></pre>
+<pre class="r"><code>sum(prior)                  # Our prior probabilities now sum to 1</code></pre>
+<pre><code>## [1] 1</code></pre>
+<pre class="r"><code>mu.h[1:5]                   # Inspect the first 5 values of mu.h</code></pre>
+<pre><code>## [1] -10.00  -9.99  -9.98  -9.97  -9.96</code></pre>
+<pre class="r"><code>prior[1:5]                  # Inspect the corresponding values of the prior</code></pre>
+<pre><code>## [1] 4.050589e-11 4.215803e-11 4.387560e-11 4.566113e-11 4.751720e-11</code></pre>
+<pre class="r"><code># For a basic plot of the prior density, run: plot(mu.h,prior/res,type=&quot;l&quot;,ylab=&quot;&quot;,lty=3)</code></pre>
+</div>
+<div id="the-likelihood" class="section level3">
+<h3>The likelihood</h3>
+<p>Next, we need to define the likelihood function, which gives the probability of observing our data for given a parameter value: <span class="math inline">\(p(y|\mu)\)</span>. To keep things simple, let us say we know that the procedure generating our measurements entails normally distributed errors with a standard deviation of 2. For a single observation, <span class="math inline">\(y_i\)</span>, the likelihood is then: <span class="math inline">\(p(y_i|\mu) = N(y_i|\mu,2^2)\)</span>. The likelihood for the whole dataset is the product of all the individual likelihoods: <span class="math display">\[p(y|\mu) = \prod^n_{i=1} N(y_i|\mu,2^2)\]</span></p>
+
+<p>Having specified the likelihood function, we can calculate the likelihood across the set of potential values for <span class="math inline">\(\mu\)</span>. An intuitive way to do this is to use loops:</p>
+<pre class="r"><code>likelihood &lt;- vector()      # Create an empty vector
+for (s in mu.h) {           # Loop over each value in mu.h
+  temp.lik &lt;- 1             # Create a temporary likelihood scalar
+  for (i in 1:n) {          # Loop over each individual data point
+    temp.lik &lt;- temp.lik * dnorm(y[i], mean = s, sd = 2) # Multiply individual likelihoods
+  }
+  likelihood &lt;- c(likelihood, temp.lik) # Store the likelihood for each value in mu.h
+}</code></pre>
+<p>However, it is more efficient to use vectorized operations and achieve the same result:</p>
+<pre class="r"><code>likelihood &lt;- sapply(mu.h, function(s) prod(dnorm(y, s, 2)) )</code></pre>
+
+<p>It is worth noting we assess the likelihood across different parameter values while keeping the data fixed. This means that the likelihood is not a probability density function that necessarily integrates (or sums) to 1 (in contrast to the prior specified above). However, to plot the likelihood on the same scale as the prior and the posterior distributions, it is useful also to calculate a normalized version that does sum to 1:</p>
+<pre class="r"><code>normalized.likelihood &lt;- likelihood / sum(likelihood)</code></pre>
+</div>
+<div id="the-posterior" class="section level3">
+<h3>The posterior</h3>
+<p>Now, we can finally turn to the posterior distribution, which represents our updated beliefs about the parameter after having observed the data: <span class="math inline">\(p(\mu|y)\)</span>. As we know from Bayes’ theorem, we can obtain a distribution that is proportional (“<span class="math inline">\(\propto\)</span>”) to the posterior by multiplying the likelihood and the prior: <span class="math display">\[p(\mu|y) \propto p(y|\mu)p(\mu)\]</span> In R, this means:</p>
+<pre class="r"><code>unnormalized.posterior &lt;- likelihood * prior</code></pre>
+<p>We can normalize this distribution to sum to 1 by multiplying it with a normalizing constant (although this constant will typically be unknown):</p>
+<pre class="r"><code>normalizing.constant &lt;- 1 / sum(likelihood * prior)
+posterior &lt;- unnormalized.posterior * normalizing.constant</code></pre>
+<p>For each value in our set of potential <span class="math inline">\(\mu\)</span>-values, we now have a posterior probability that <span class="math inline">\(\mu\)</span> indeed lies in a .01-interval around this point. To plot the distributions as approximate probability densities, we can divide them by .01 before plotting. This gives the following result:</p>
+<p><img src="/post/Bayesian_statistics_introduction_files/figure-html/bayes-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>What do we see here? Because we only have three observations for the individual in question, we get a fairly wide likelihood, which allows the posterior to be drawn towards the prior. Put differently, we do not have enough information to conclude that <span class="math inline">\(\mu\)</span> is as far from the population mean as the likelihood would suggest. If we wanted greater certainty, we could go collect more data and get a narrower likelihood distribution.</p>
+<pre class="r"><code># For a basic version of the plot above, run: plot(mu.h, posterior / res, type = &quot;l&quot;, ylab = &quot;&quot;); lines(mu.h, normalized.likelihood / res, lty = 2); lines(mu.h, prior / res, lty = 3)</code></pre>
+</div>
+<div id="estimating-two-parameters" class="section level2">
+<h2>Estimating two parameters</h2>
+<p>Above, we simplified by assuming that we knew the standard deviation of the errors in our data. That is not a very common situation, so let us try to estimate both the mean, <span class="math inline">\(\mu\)</span>, and the standard deviation, <span class="math inline">\(\sigma\)</span>. The standard deviation must be positive, so we will consider its probability distribution over a set of positive values. To keep things simple, let us give <span class="math inline">\(\sigma\)</span> a flat prior over the range from 0 to 10, using a uniform distribution: <span class="math inline">\(p(\sigma) \sim U(0,10)\)</span>. To do this in R, we use the density function <code>dunif</code>:</p>
+<pre class="r"><code>sigma.h &lt;- seq(0, 10, res)    # Define values at which to assess the probabilities for sigma
+sigma.density &lt;- dunif(sigma.h, min(sigma.h), max(sigma.h)) # Density-values for a flat prior
+sigma.prior &lt;- sigma.density * res # Multiply with res to get probability per interval
+mu.prior &lt;- prior           # Use the same prior for mu as in the previous example</code></pre>
+<div id="the-joint-prior" class="section level3">
+<h3>The joint prior</h3>
+<p>Now that we have specified priors for <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span>, we can also specify their joint prior distribution, <span class="math inline">\(p(\mu,\sigma)\)</span>. For a given pair of potential values – one for <span class="math inline">\(\mu\)</span> and one for <span class="math inline">\(\sigma\)</span> – this gives us the prior probability that <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span> are each (approximately) equal to their respective value in this pair. Because we have specified the priors for <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span> independently (i.e. no covariation), the joint prior distribution is in this case simply: <span class="math display">\[p(\mu,\sigma) = p(\mu)p(\sigma)\]</span> To get the joint prior in R, we can thus write:</p>
+<pre class="r"><code>joint.prior &lt;- sapply(mu.prior, function(mu.s) { # Using sapply&#39;s instead of loops
+                sapply(sigma.prior, function(sigma.s) { mu.s * sigma.s })})</code></pre>
+<p>This gives us a two-dimensional grid of probabilities, representing all possible combinations of <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span> values that we are considering. Note, however, that the columns in this grid are constant, due to the flat prior on <span class="math inline">\(\sigma\)</span>:</p>
+<pre class="r"><code>joint.prior[1:5,1:5]        # Inspect the first 5x5 entries</code></pre>
+<pre><code>##              [,1]         [,2]        [,3]         [,4]        [,5]
+## [1,] 4.050589e-14 4.215803e-14 4.38756e-14 4.566113e-14 4.75172e-14
+## [2,] 4.050589e-14 4.215803e-14 4.38756e-14 4.566113e-14 4.75172e-14
+## [3,] 4.050589e-14 4.215803e-14 4.38756e-14 4.566113e-14 4.75172e-14
+## [4,] 4.050589e-14 4.215803e-14 4.38756e-14 4.566113e-14 4.75172e-14
+## [5,] 4.050589e-14 4.215803e-14 4.38756e-14 4.566113e-14 4.75172e-14</code></pre>
+</div>
+<div id="the-joint-likelihood" class="section level3">
+<h3>The joint likelihood</h3>
+<p>Our likelihood function still looks much like before, but it now gives the probability of the data given two parameters instead of one. For a single observation, <span class="math inline">\(y_i\)</span>, the likelihood is now: <span class="math inline">\(p(y_i|\mu,\sigma) = N(y_i|\mu,\sigma^2)\)</span>. As before, the likelihood for the whole dataset is the product of all the individual likelihoods:</p>
+<p><span class="math display">\[p(y|\mu,\sigma) = \prod^n_{i=1} N(y_i|\mu,\sigma^2)\]</span></p>
+<p>If we calculate the likelihood across the possible combinations of values for <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span>, we now get a two-dimensional grid. To do so in R, we run:</p>
+<pre class="r"><code>joint.likelihood &lt;- sapply(mu.h, function(mu.s) { # Sapply&#39;s instead of loops
+                      sapply(sigma.h, function(sigma.s) { prod(dnorm(y, mu.s, sigma.s)) })})
+normalized.joint.likelihood &lt;- joint.likelihood / sum(joint.likelihood) # Normalize </code></pre>
+</div>
+<div id="the-joint-posterior" class="section level3">
+<h3>The joint posterior</h3>
+<p>The posterior distribution is now a joint distribution for our two parameters. Adapting Bayes’ theorem to this case, we get:</p>
+<p><span class="math display">\[p(\mu,\sigma|y) \propto p(y|\mu,\sigma)p(\mu,\sigma)\]</span></p>
+<p>This is easy to calculate in R:</p>
+<pre class="r"><code>unnormalized.joint.posterior &lt;- joint.likelihood * joint.prior
+normalizing.constant &lt;- 1 / sum(joint.likelihood * joint.prior)
+joint.posterior &lt;- unnormalized.joint.posterior * normalizing.constant</code></pre>
+<p>Instead of looking directly at the resulting two-dimensional set of probabilities, we can use a contour plot:</p>
+<p><img src="/post/Bayesian_statistics_introduction_files/figure-html/bivariate_dist-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>What do we see here? There is some covariation between the parameters in the joint posterior distribution: When <span class="math inline">\(\sigma\)</span> is large, the likelihood gets wider, so the posterior probabilities for <span class="math inline">\(\mu\)</span> get drawn more strongly towards the prior.</p>
+<pre class="r"><code># For a basic version of the plot above, run: contour(mu.h,sigma.h,t(joint.posterior))</code></pre>
+</div>
+<div id="marginal-distributions" class="section level3">
+<h3>Marginal distributions</h3>
+<p>While the joint posterior may be useful, we often want to draw conclusions about the values of a given parameter without reference to the other parameter(s) in the model. The way to obtain a posterior distribution for a single parameter – a marginal posterior distribution – is to average the joint distribution over the parameter(s) we want to leave aside. In other words, to get the marginal posterior for <span class="math inline">\(\mu\)</span>, <span class="math inline">\(p(\mu|y)\)</span>, we integrate the joint posterior over <span class="math inline">\(\sigma\)</span>: <span class="math display">\[ p(\mu|y) = \int p(\mu,\sigma |y)d(\sigma)\]</span> In our case, we have already simplified this task by effectively turning our continuous distributions into categorical ones. This makes it easy to approximate the integral by summing the posterior probabilities in our grid for each potential value of <span class="math inline">\(\sigma\)</span>. Because our grid has a row for each potential value of <span class="math inline">\(\sigma\)</span>, we sum the probabilities in each column (across all rows) to get the marginal probabilities for <span class="math inline">\(\mu\)</span>:</p>
+<pre class="r"><code>mu.marginal.posterior &lt;- colSums(joint.posterior)</code></pre>
+<p>We can also do the same for the normalized likelihood:</p>
+<pre class="r"><code>mu.marginal.norm.likelihood &lt;- colSums(normalized.joint.likelihood)</code></pre>
+
+<p>The resulting distributions look like this:</p>
+<p><img src="/post/Bayesian_statistics_introduction_files/figure-html/marginal_mu-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>We see that estimating <span class="math inline">\(\sigma\)</span> and giving it a flat prior has resulted in a likelihood with much fatter tails than earlier, which in turn has changed the shape of the posterior distribution for <span class="math inline">\(\mu\)</span>.</p>
+<pre class="r"><code># For a basic version of this plot, run: plot(mu.h,mu.marginal.norm.likelihood/res,type=&quot;l&quot;,ylab=&quot;&quot;,lty=2); lines(mu.h,mu.marginal.posterior/res,lty=1); lines(mu.h,mu.prior/res,lty=3)</code></pre>
+<p>For <span class="math inline">\(\sigma\)</span>, the marginal distributions are as follows:</p>
+<pre class="r"><code>sigma.marginal.posterior &lt;- rowSums(joint.posterior)
+sigma.marginal.norm.likelihood &lt;- rowSums(normalized.joint.likelihood)</code></pre>
+<p><img src="/post/Bayesian_statistics_introduction_files/figure-html/marginal_sigma-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+
+<pre class="r"><code># For a basic version of this plot, run: plot(sigma.h,sigma.marginal.norm.likelihood/res,type=&quot;l&quot;,ylab=&quot;&quot;,lty=2); lines(sigma.h,sigma.marginal.posterior/res,lty=1); lines(sigma.h,sigma.prior/res,lty=3)</code></pre>
+</div>
+<div id="final-notes" class="section level3">
+<h3>Final notes</h3>
+<p>The approach used here (calculating joint probability distributions over a grid) was chosen because it permits illustrating key Bayesian concepts without using too much math. However, the grid-approach is not one we would typically use in actual analyses. One reason is that simple models like the one we have here often can be solved analytically by using conjugate priors (which can be very neat). Another reason is that the grid-approach is ill-suited for more complicated problems, as the number of elements in the grid increases exponentially with the number of parameters: With two parameters, and considering <span class="math inline">\(1,000\)</span> potential values for each, we get a grid with <span class="math inline">\(1,000^2 = 1,000,000\)</span> elements. With <span class="math inline">\(50\)</span> parameters, we get: <span class="math inline">\(1,000^{50}\)</span>. For such problems, we would normally sample from the posterior distribution using a form of Markov Chain Monte Carlo (MCMC) – which is the topic of my <a href="http://www.boelstad.net/post/mcmc_sampling_introduction/">next post</a>. For actual MCMC analyses, I recommend having a look at Stan: <a href="http://www.mc-stan.org" target="_blank">http://www.mc-stan.org</a>.</p>
+
+</div>
+<div id="how-to-cite" class="section level3">
+<h3>How to cite</h3>
+<p>
+This material can be cited as follows:
+</p>
+<div class="Bib">
+<p>
+Bølstad, Jørgen. 2018. “The Basics of Bayesian Inference: Evaluating Continuous Distributions over a Grid in R”. <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/bayesian_statistics_introduction/.
+</p>
+</div>
+<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:</p>
+<pre class="text"><code>@Misc{boelstad:2018a,
+  Author = {B{\o}lstad, J{\o}rgen},
+  Title = {The Basics of Bayesian Inference: Evaluating Continuous Distributions over a Grid in R},
+  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  Url = {\url{http://www.boelstad.net/post/bayesian_statistics_introduction/}},
+  Year = {2018},
+  Month = {July 22}}</code></pre>
+</div>
+<div id="further-reading" class="section level3">
+<h3>Further reading</h3>
+<div class="Bib">
+<p>
+Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman &amp; Hall/CRC Press.
+</p>
+<p>
+McElreath, Richard. 2016. <i>Statistical Rethinking: A Bayesian Course with Examples in R and Stan.</i> London: Chapman &amp; Hall/CRC Press.
+</p>
+</div>
+</div>
+</div>

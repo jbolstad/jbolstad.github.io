@@ -1,0 +1,136 @@
+---
+title: "An Introduction to Markov Chain Monte Carlo Sampling"
+subtitle: "Writing and diagnosing a Metropolis sampler in R"
+author: "Jørgen Bølstad"
+type: "post"
+draft: false
+date: 2018-07-23
+tags: ["R", "Bayesian statistics"]
+---
+
+
+<p>It is usually not too difficult to define priors and specify a likelihood function, which means we can calculate the unnormalized posterior for any combination of relevant parameter values. However, that is still insufficient to give us marginal posterior distributions for the parameters of interest. The grid method that was used in the previous post is not feasible for situations with a large number of parameters, and conjugate models with analytical solutions are mainly relevant for a subset of suitable problems. So what can we do? We sample from the posterior distribution!</p>
+<p>This post illustrates Markov Chain Monte Carlo sampling by writing a simple Metropolis sampler in R. There are some very efficient MCMC implementations already out there, so the goal of doing this manually is purely educational. (If you are unfamiliar with the basics of Bayesian inference, my <a href="http://www.boelstad.net/post/bayesian_statistics_introduction/">previous post</a> may be a better start.)</p>
+<div id="defining-the-prior-likelihood-and-posterior" class="section level3">
+<h3>Defining the prior, likelihood, and posterior</h3>
+<p>To keep things simple, and to enable comparison, we will use the same data, model, and priors as in the previous post. That means we have three noisy observations of a single individual, which we use to estimate this individual’s latent trait, <span class="math inline">\(\mu\)</span>, as well as the standard deviation of the measurement errors, <span class="math inline">\(\sigma\)</span>.</p>
+<p>To get started, we will recreate the data:</p>
+<pre class="r"><code>set.seed(4)                 # Set seed for reproducibility
+n &lt;- 3                      # Set number of observations
+y &lt;- rnorm(n, mean = 1, sd = 2) # Generate data</code></pre>
+<p>We exploit the fact that our individual is drawn from a population, and let our prior for <span class="math inline">\(\mu\)</span> reflect the known population distribution: <span class="math inline">\(p(\mu) \sim N(-1,1.5)\)</span>. For <span class="math inline">\(\sigma\)</span>, we use a simple, flat prior (even though other choices may be better): <span class="math inline">\(p(\sigma) \sim U(0,10)\)</span>. The joint prior is the product of these: <span class="math display">\[p(\mu,\sigma) = p(\mu)p(\sigma)\]</span> We thus define the joint prior distribution as the following function:</p>
+<pre class="r"><code>prior &lt;- function(mu, sigma) { dnorm(mu, mean = -1, sd = 1.5) * dunif(sigma, 0, 10) }</code></pre>
+<p>The likelihood function is the product of the individual likelihoods, which in turn are defined by the normal probability density function and a given pair of values for <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span>:</p>
+<p><span class="math display">\[p(y|\mu,\sigma) = \prod^n_{i=1} N(y_i|\mu,\sigma^2)\]</span> We thus define the likelihood function as follows:</p>
+<pre class="r"><code>likelihood &lt;- function(y, mu, sigma) { prod(dnorm(y, mean = mu, sd = sigma)) }</code></pre>
+<p>Recall that the posterior is proportional to the product of the likelihood and the prior: <span class="math display">\[p(\mu,\sigma|y) \propto p(y|\mu,\sigma)p(\mu,\sigma)\]</span> We thus define the unnormalized posterior as the following function:</p>
+<pre class="r"><code>unnorm.posterior &lt;- function(y, mu, sigma) { likelihood(y, mu, sigma) * prior(mu, sigma) }</code></pre>
+</div>
+<div id="setting-up-a-metropolis-sampler" class="section level3">
+<h3>Setting up a Metropolis sampler</h3>
+<p>We are now able to calculate the unnormalized posterior probability for any given combination of relevant parameter values. But now what? For a high-dimensional problem (which we admittedly do <em>not</em> have here), Markov Chain Monte Carlo (MCMC) sampling may be the best option for approximating the posterior distribution. MCMC can simulate draws from any distribution as long as we can provide a function whose output is proportional to the density of the relevant target distribution. That is typically the situation in Bayesian inference, as the unnormalized posterior is proportional to the actual posterior distribution. In this setting, MCMC methods will produce draws that converge to the target distribution (i.e. the posterior) as the number of draws increases.</p>
+<p>The Metropolis algorithm is a straightforward example of MCMC and thus useful for understanding the basics. The algorithm runs through a number of iterations to create a sequence of parameter values, where each set of values depend on the previous set. More specifically, it takes a set of starting values (one per parameter), and proposes a set of new values by adding a random innovation drawn from a specified function (we will use a normal distribution). The proposal set can then either be accepted – and replace the starting values – or be rejected – so that the starting values are retained. Then the next iteration follows, based on whichever set of values was retained in the previous iteration.</p>
+<p>The probability that a proposal set is accepted depends on a comparison of the unnormalized posterior for the set of current values and for the set of proposed values. If the proposal set has a higher unnormalized posterior, it will always be accepted. If it does not, it may still be accepted, but the probability of acceptance declines linearly with the ratio of the value for the proposal set over the value for the current set: If, for instance, the unnormalized posterior probability for the proposal set is half of that for the current set, then the proposal set has an acceptance probability of .5. The result is that the sampler (once the chain has reached its equilibrium) has acceptance probabilities equal to the target distribution, producing draws from the posterior distribution.</p>
+
+<p>To start setting up the algorithm, let us first define our proposal function, which takes a pair of parameter values as input, and returns a new pair after adding random innovations. The innovations are drawn from a normal distribution with a mean of zero and a specified standard deviation (proposal.sd):</p>
+<pre class="r"><code>proposals &lt;- function(mu, sigma, proposal.sd) { c(mu, sigma) + rnorm(2, 0, proposal.sd) }</code></pre>
+<p>Now, let us set up the algorithm as a function running for a specified set of iterations (n.it), using a given proposal standard deviation, a set of starting values, and a set of data (y):</p>
+<pre class="r"><code>metropolis &lt;- function(y, n.it, proposal.sd, starting.values) {
+  sample &lt;- vector()        
+  current.draw &lt;- starting.values
+  for (it in 1:n.it) {      
+    proposal &lt;- proposals(current.draw[1], current.draw[2], proposal.sd)
+    if (proposal[2] &lt; 0) { acceptance.ratio = 0 } # Reject if sigma &lt; 0 (as prior = 0)
+    else { acceptance.ratio &lt;- (unnorm.posterior(y, proposal[1], proposal[2]) / 
+                                 unnorm.posterior(y,  current.draw[1],current.draw[2])) }
+    random.threshold &lt;- runif(1, 0, 1) # Threshold for accepting when ratio &lt; 1
+    if (acceptance.ratio &gt;= random.threshold) { current.draw &lt;- proposal }
+    sample &lt;- rbind(sample, current.draw) 
+  } 
+  return(sample)
+}</code></pre>
+</div>
+<div id="obtaining-simulation-draws" class="section level3">
+<h3>Obtaining simulation draws</h3>
+<p>Let us see if the algorithm succeeds in sampling from the posterior density. First, we define a starting value for each of the parameters, and in this case we will draw these from our prior distributions:</p>
+<pre class="r"><code>starting.values &lt;- c(rnorm(1, -1, 1.5), runif(1, 0, 10)) # The first is mu, the second sigma</code></pre>
+<p>We will run the sampler for 2500 iterations, and give the innovations a standard deviation of 1:</p>
+<pre class="r"><code>n.it = 2500
+draws &lt;- metropolis(y, n.it, proposal.sd = 1, starting.values = starting.values)</code></pre>
+<p>This gives us 2500 draws for each of the parameters, and it is useful to plot these draws over their draw-number as a sequence:</p>
+<p><img src="/post/MCMC_sampling_introduction_files/figure-html/draws-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /><img src="/post/MCMC_sampling_introduction_files/figure-html/draws-2.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<pre class="r"><code># For basic versions of these plots, run: plot(1:n.it, draws[, 1], type = &quot;l&quot;); plot(1:n.it, draws[, 2] , type = &quot;l&quot;) </code></pre>
+<p>The plots above are encouraging, as the sequences both look stationary and highly variable. This suggests that the proposal distribution is sufficiently wide to move the sampler quickly across the parameter space, while the proposals still have a reasonable chance of being accepted.</p>
+</div>
+<div id="marginal-distributions" class="section level3">
+<h3>Marginal distributions</h3>
+<p>Ultimately, we are interested in drawing conclusions regarding the parameter values, so we want to assess the marginal posterior distributions. As noted in the previous post, the marginal posterior for <span class="math inline">\(\mu\)</span> is defined as: <span class="math display">\[ p(\mu|y) = \int p(\mu,\sigma |y)d(\sigma)\]</span> The MCMC approach makes it easy to approximate this distribution, as we can simply ignore the other parameter(s) when summarizing the draws for the parameter we are interested in. In other words, to approximate the marginal distribution for <span class="math inline">\(\mu\)</span>, we just estimate the density of its draws. Now, as we are using the same data and model as in the previous post, we can also compare the densities of our draws to the previously calculated densities (here represented by dark blue lines):</p>
+<p><img src="/post/MCMC_sampling_introduction_files/figure-html/marginal_dist-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /><img src="/post/MCMC_sampling_introduction_files/figure-html/marginal_dist-2.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>That looks pretty good! And if we wanted greater accuracy, we could just increase the number of draws.</p>
+<pre class="r"><code># For basic versions of these plot, run this (after also running the codes for the previous post): plot(density(draws[, 1])); lines(mu.h, mu.marginal.posterior / res); plot(density(draws[, 2])); lines(sigma.h, sigma.marginal.posterior / res)</code></pre>
+</div>
+<div id="what-could-go-wrong" class="section level3">
+<h3>What could go wrong?</h3>
+<p>Let us consider some potential issues that could arise. First, it should be noted that it is always a good idea to run the sampler more than once, as it helps diagnosing potential problems. Here, we will run the sampler twice, which gives us two sequences of draws for each parameter. Normally one would want to run one chain on each processor core, but we will keep it simple and one run after the other.</p>
+<div id="too-large-step-size" class="section level4">
+<h4>Too large step size</h4>
+<p>For the sake of illustration, let us run the sampler with a much larger step size, increasing the standard deviation of the proposal distribution to 20:</p>
+<pre class="r"><code>n.it = 2500
+chain1 &lt;- metropolis(y, n.it, proposal.sd = 20, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+chain2 &lt;- metropolis(y, n.it, proposal.sd = 20, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+draws.2 &lt;- data.frame(1:n.it, chain1, chain2)</code></pre>
+<p>The results are as follows:</p>
+<p><img src="/post/MCMC_sampling_introduction_files/figure-html/too_large_step-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /><img src="/post/MCMC_sampling_introduction_files/figure-html/too_large_step-2.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>What is going on here? The wide proposal distribution is giving us a large number of proposals that have very low or zero posterior probability, which results in a very high rejection rate (about 99%). This is visible as flat lines in the plot. In practice, we will need a greater number of draws to get an acceptable approximation of the posterior distribution.</p>
+<pre class="r"><code># For basic versions of the plots above, run: plot(1:n.it, draws.2[, 2], type = &quot;l&quot;, ylim = c(min(draws.2[, c(2, 4)]), max(draws.2[, c(2, 4)]))); lines(1:n.it, draws.2[, 4]); plot(1:n.it, draws.2[, 3], type = &quot;l&quot;, ylim = c(min(draws.2[, c(3, 5)]), max(draws.2[, c(3, 5)]))); lines(1:n.it, draws.2[, 5])</code></pre>
+</div>
+<div id="too-small-step-size" class="section level4">
+<h4>Too small step size</h4>
+<p>When the situation above occurs, a natural response is to make the proposal distribution narrower. Let us see what happens if we go a bit far and reduce the standard deviation of the innovations to 1/100:</p>
+<pre class="r"><code>n.it = 2500
+chain1 &lt;- metropolis(y, n.it, proposal.sd = .01, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+chain2 &lt;- metropolis(y, n.it, proposal.sd = .01, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+draws.3 &lt;- data.frame(1:n.it, chain1, chain2)</code></pre>
+<p>Now we get the following results:</p>
+<p><img src="/post/MCMC_sampling_introduction_files/figure-html/too_small_step-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /><img src="/post/MCMC_sampling_introduction_files/figure-html/too_small_step-2.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>What do we see here? The small step size means the chain is moving very slowly around in the parameter space. It also gives a very high acceptance rate (about 97%), because few proposals are notably worse than the draws they compete with. With this set-up, we would need an extremely high number of iterations for the chains to converge and approximate the posterior distribution.</p>
+<pre class="r"><code># For basic versions of the plots above, run: plot(1:n.it, draws.3[, 2], type = &quot;l&quot;, ylim = c(min(draws.3[, c(2, 4)]), max(draws.3[, c(2, 4)]))); lines(1:n.it, draws.3[, 4]); plot(1:n.it, draws.3[, 3], type = &quot;l&quot;, ylim = c(min(draws.3[, c(3, 5)]), max(draws.3[, c(3, 5)]))); lines(1:n.it, draws.3[, 5]) </code></pre>
+</div>
+</div>
+<div id="final-notes" class="section level3">
+<h3>Final notes</h3>
+<p>In this example, it easy to set a step size that makes the Metropolis algorithm work well. In more complicated settings, with a large number of potentially correlated parameters, the algorithm may be less well suited, and more advanced samplers (e.g. Hamiltonian MC/NUTS) may be preferable. It should also be noted that there are also several topics I have left aside here. The present example is so limited that we could keep things simple and not work with log probabilities. In my <a href="http://www.boelstad.net/post/bayesian_hierarchical_modeling/">next post</a>, I expand the sampler to analyze a hierarchical dataset, which requires using logs to avoid computational underflows. Other issues I have left aside include the calculation of convergence statistics and effective simulation draws, as well as the fact that these algorithms typically require a warm-up period – with appropriate step size, there is hardly need for one in this example.</p>
+
+</div>
+<div id="how-to-cite" class="section level3">
+<h3>How to cite</h3>
+<p>
+This material can be cited as follows:
+</p>
+<div class="Bib">
+<p>
+Bølstad, Jørgen. 2018. “An Introduction to Markov Chain Monte Carlo Sampling: Writing and Diagnosing a Metropolis Sampler in R”. <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/mcmc_sampling_introduction/.
+</p>
+</div>
+<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:</p>
+<pre class="text"><code>@Misc{boelstad:2018b,
+  Author = {B{\o}lstad, J{\o}rgen},
+  Title = {An Introduction to Markov Chain Monte Carlo Sampling: Writing and Diagnosing a Metropolis Sampler in R},
+  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  Url = {\url{http://www.boelstad.net/post/mcmc_sampling_introduction/}},
+  Year = {2018},
+  Month = {July 23}}</code></pre>
+</div>
+<div id="further-reading" class="section level3">
+<h3>Further reading</h3>
+<div class="Bib">
+<p>
+Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman &amp; Hall/CRC Press.
+</p>
+
+</div>
+</div>

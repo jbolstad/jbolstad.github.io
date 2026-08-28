@@ -1,0 +1,14 @@
+.Rproj.user
+.Rhistory
+/.RData
+.Ruserdata
+/public/
+/blogdown/
+*.DS_Store
+*_cache/
+.hugo_build.lock
+
+# Local theme backup, not used by the live site
+themes/beautifulhugo/static/css/main - with original menu bar.css
+static/static/j.boelstad.bw.frame.old.jpg
+static/publications/Boelstad&Dinas-CategorizationTheory-old.pdf

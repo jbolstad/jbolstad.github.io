@@ -1,0 +1,277 @@
+---
+title: "An Introduction to Markov Chain Monte Carlo Sampling"
+subtitle: "Writing and diagnosing a Metropolis sampler in R"
+author: "Jørgen Bølstad"
+type: "post"
+draft: false
+date: 2018-07-23
+tags: ["R", "Bayesian statistics"]
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=7.35, fig.height=3.5, fig.align="left", dev="svg") 
+library(ggplot2)
+library(reshape2)
+source("../../knit-data/colors.R")
+
+## Preloading results, instead of using built-in cache, to prevent re-doing:
+load("../../knit-data/mcmc-sampling-introduction.RData")
+
+n.it = 2500
+```
+
+It is usually not too difficult to define priors and specify a likelihood function, which means we can calculate the unnormalized posterior for any combination of relevant parameter values. However, that is still insufficient to give us marginal posterior distributions for the parameters of interest. The grid method that was used in the previous post is not feasible for situations with a large number of parameters, and conjugate models with analytical solutions are mainly relevant for a subset of suitable problems. So what can we do? We sample from the posterior distribution!
+
+This post illustrates Markov Chain Monte Carlo sampling by writing a simple Metropolis sampler in R. There are some very efficient MCMC implementations already out there, so the goal of doing this manually is purely educational. (If you are unfamiliar with the basics of Bayesian inference, my <a href="http://www.boelstad.net/post/bayesian_statistics_introduction/">previous post</a> may be a better start.)
+
+### Defining the prior, likelihood, and posterior
+To keep things simple, and to enable comparison, we will use the same data, model, and priors as in the previous post. That means we have three noisy observations of a single individual, which we use to estimate this individual's latent trait, $\mu$, as well as the standard deviation of the measurement errors, $\sigma$. 
+
+To get started, we will recreate the data:
+```{r data}
+set.seed(4)                 # Set seed for reproducibility
+n <- 3                      # Set number of observations
+y <- rnorm(n, mean = 1, sd = 2) # Generate data
+```
+
+```{r, include=FALSE, cache = TRUE}
+## Code from post 1, for comparison of results:
+res <- 1/20                          # Choosing a resolution for the grid of potential mu-values
+mu.h <- seq(-10,10,res)              # Defining the values at which to assess the probability density
+mu.prior <- dnorm(mu.h,mean=-1,sd=1.5)  # Calculating the prior probability that mu = mu.h, for each value in mu.h
+mu.prior <- mu.prior / sum(mu.prior)   
+sigma.h <- seq(0,10,res)              # Defining the values at which to assess the probabilities for sigma
+sigma.prior <- dunif(sigma.h,min(sigma.h),max(sigma.h)) # Calculating probabilities for a flat prior
+sigma.prior <- sigma.prior / sum(sigma.prior)           # Normalizing the probabilities to sum to 1 
+prior <- sapply(mu.prior,function(mu.s) {
+  sapply(sigma.prior,function(sigma.s) { mu.s*sigma.s })})
+likelihood <- sapply(mu.h,function(mu.s) {             # Using nested sapply's and not loops this time.
+  sapply(sigma.h,function(sigma.s) { prod(dnorm(y,mu.s,sigma.s)) })})           
+likelihood <- likelihood / sum(likelihood) # Normalizing 
+unnormalized.posterior <- likelihood * prior
+normalizing.constant <- 1 / sum(likelihood * prior)
+posterior <- unnormalized.posterior * normalizing.constant
+mu.marginal.likelihood <- colSums(likelihood)
+mu.marginal.posterior <- colSums(posterior)
+sigma.marginal.likelihood <- rowSums(likelihood)
+sigma.marginal.posterior <- rowSums(posterior)
+```
+
+We exploit the fact that our individual is drawn from a population, and let our prior for $\mu$ reflect the known population distribution: $p(\mu) \sim N(-1,1.5)$. For $\sigma$, we use a simple, flat prior (even though other choices may be better): $p(\sigma) \sim U(0,10)$. The joint prior is the product of these: 
+$$p(\mu,\sigma) = p(\mu)p(\sigma)$$
+We thus define the joint prior distribution as the following function:
+```{r}
+prior <- function(mu, sigma) { dnorm(mu, mean = -1, sd = 1.5) * dunif(sigma, 0, 10) }
+```
+The likelihood function is the product of the individual likelihoods, which in turn are defined by the normal probability density function and a given pair of values for $\mu$ and $\sigma$:
+
+$$p(y|\mu,\sigma) = \prod^n_{i=1} N(y_i|\mu,\sigma^2)$$
+We thus define the likelihood function as follows:
+```{r}
+likelihood <- function(y, mu, sigma) { prod(dnorm(y, mean = mu, sd = sigma)) }
+```
+
+Recall that the posterior is proportional to the product of the likelihood and the prior:
+$$p(\mu,\sigma|y) \propto p(y|\mu,\sigma)p(\mu,\sigma)$$
+We thus define the unnormalized posterior as the following function:
+```{r}
+unnorm.posterior <- function(y, mu, sigma) { likelihood(y, mu, sigma) * prior(mu, sigma) }
+```
+
+### Setting up a Metropolis sampler
+We are now able to calculate the unnormalized posterior probability for any given combination of relevant parameter values. But now what? For a high-dimensional problem (which we admittedly do *not* have here), Markov Chain Monte Carlo (MCMC) sampling may be the best option for approximating the posterior distribution. MCMC can simulate draws from any distribution as long as we can provide a function whose output is proportional to the density of the relevant target distribution. That is typically the situation in Bayesian inference, as the unnormalized posterior is proportional to the actual posterior distribution. In this setting, MCMC methods will produce draws that converge to the target distribution (i.e. the posterior) as the number of draws increases. 
+
+The Metropolis algorithm is a straightforward example of MCMC and thus useful for understanding the basics. The algorithm runs through a number of iterations to create a sequence of parameter values, where each set of values depend on the previous set. More specifically, it takes a set of starting values (one per parameter), and proposes a set of new values by adding a random innovation drawn from a specified function (we will use a normal distribution). The proposal set can then either be accepted -- and replace the starting values -- or be rejected -- so that the starting values are retained. Then the next iteration follows, based on whichever set of values was retained in the previous iteration. 
+
+The probability that a proposal set is accepted depends on a comparison of the unnormalized posterior for the set of current values and for the set of proposed values. If the proposal set has a higher unnormalized posterior, it will always be accepted. If it does not, it may still be accepted, but the probability of acceptance declines linearly with the ratio of the value for the proposal set over the value for the current set: If, for instance, the unnormalized posterior probability for the proposal set is half of that for the current set, then the proposal set has an acceptance probability of .5. The result is that the sampler (once the chain has reached its equilibrium) has acceptance probabilities equal to the target distribution, producing draws from the posterior distribution.
+
+
+To start setting up the algorithm, let us first define our proposal function, which takes a pair of parameter values as input, and returns a new pair after adding random innovations. The innovations are drawn from a normal distribution with a mean of zero and a specified standard deviation (proposal.sd):
+```{r}
+proposals <- function(mu, sigma, proposal.sd) { c(mu, sigma) + rnorm(2, 0, proposal.sd) }
+```
+
+Now, let us set up the algorithm as a function running for a specified set of iterations (n.it), using a given proposal standard deviation, a set of starting values, and a set of data (y): 
+
+```{r}
+metropolis <- function(y, n.it, proposal.sd, starting.values) {
+  sample <- vector()        
+  current.draw <- starting.values
+  for (it in 1:n.it) {      
+    proposal <- proposals(current.draw[1], current.draw[2], proposal.sd)
+    if (proposal[2] < 0) { acceptance.ratio = 0 } # Reject if sigma < 0 (as prior = 0)
+    else { acceptance.ratio <- (unnorm.posterior(y, proposal[1], proposal[2]) / 
+                                 unnorm.posterior(y,  current.draw[1],current.draw[2])) }
+    random.threshold <- runif(1, 0, 1) # Threshold for accepting when ratio < 1
+    if (acceptance.ratio >= random.threshold) { current.draw <- proposal }
+    sample <- rbind(sample, current.draw) 
+  } 
+  return(sample)
+}
+```
+
+### Obtaining simulation draws
+Let us see if the algorithm succeeds in sampling from the posterior density. First, we define a starting value for each of the parameters, and in this case we will draw these from our prior distributions:
+```{r}
+starting.values <- c(rnorm(1, -1, 1.5), runif(1, 0, 10)) # The first is mu, the second sigma
+```
+We will run the sampler for 2500 iterations, and give the innovations a standard deviation of 1:
+```{r, eval=FALSE}
+n.it = 2500
+draws <- metropolis(y, n.it, proposal.sd = 1, starting.values = starting.values)
+```
+This gives us 2500 draws for each of the parameters, and it is useful to plot these draws over their draw-number as a sequence: 
+
+```{r draws, echo=F}
+sample <- data.frame(draw=1:n.it,mu=draws[,1],sigma=draws[,2])
+prev.mu <- data.frame(mu.h,mu.marginal.posterior/res)
+names(prev.mu)[2] <- "mu.marginal.posterior"
+prev.sigma <- data.frame(sigma.h,sigma.marginal.posterior/res)
+names(prev.sigma)[2] <- "sigma.marginal.posterior"
+p <- ggplot(sample,aes(draw,mu)) + geom_line(color= col.trans[2,5],alpha=.7) + 
+  guides(fill="none") + labs(x = "Draw", y = expression(mu), fill="") + theme(legend.position = "bottom")
+p
+
+p <- ggplot(sample,aes(draw,sigma)) + geom_line(color=col.solid[2,5],alpha=.7) + 
+   guides(fill="none") + labs(x = "Draw", y = expression(sigma), fill="")  + theme(legend.position = "bottom")
+p
+```
+
+```{r}
+# For basic versions of these plots, run: plot(1:n.it, draws[, 1], type = "l"); plot(1:n.it, draws[, 2] , type = "l") 
+```
+
+The plots above are encouraging, as the sequences both look stationary and highly variable. This suggests that the proposal distribution is sufficiently wide to move the sampler quickly across the parameter space, while the proposals still have a reasonable chance of being accepted. 
+
+### Marginal distributions
+
+Ultimately, we are interested in drawing conclusions regarding the parameter values, so we want to assess the marginal posterior distributions. As noted in the previous post, the marginal posterior for $\mu$ is defined as:
+$$ p(\mu|y) = \int p(\mu,\sigma |y)d(\sigma)$$
+The MCMC approach makes it easy to approximate this distribution, as we can simply ignore the other parameter(s) when summarizing the draws for the parameter we are interested in. In other words, to approximate the marginal distribution for $\mu$, we just estimate the density of its draws. Now, as we are using the same data and model as in the previous post, we can also compare the densities of our draws to the previously calculated densities (here represented by dark blue lines):
+
+```{r marginal_dist,echo=F}
+p <- ggplot(data=sample,aes(mu)) + geom_density(color="darkgray",fill=col.trans[2,5],bw=.07) + 
+   guides(fill="none") + geom_line(data=prev.mu,aes(x=mu.h,y=mu.marginal.posterior),color=col.trans[2,8],alpha=.6,lwd=.7) + labs(y = "Probability density", x = expression(mu), fill="") + theme(legend.position = "bottom")
+p
+p <- ggplot(data=sample,aes(sigma)) + geom_density(color="darkgray",fill=col.trans[2,5],bw=.07) + 
+   guides(fill="none") + geom_line(data=prev.sigma,aes(x=sigma.h,y=sigma.marginal.posterior),color=col.trans[2,8],alpha=.6,lwd=.7) + labs(y = "Probability density", x = expression(sigma), fill="") + theme(legend.position = "bottom")
+p
+```
+
+
+That looks pretty good! And if we wanted greater accuracy, we could just increase the number of draws.
+
+
+```{r}
+# For basic versions of these plots, run this (after also running the codes for the previous post): plot(density(draws[, 1])); lines(mu.h, mu.marginal.posterior / res); plot(density(draws[, 2])); lines(sigma.h, sigma.marginal.posterior / res)
+```
+
+
+### What could go wrong?
+
+Let us consider some potential issues that could arise. First, it should be noted that it is always a good idea to run the sampler more than once, as it helps diagnosing potential problems. Here, we will run the sampler twice, which gives us two sequences of draws for each parameter. Normally one would want to run one chain on each processor core, but we will keep it simple and one run after the other. 
+
+#### Too large step size
+
+For the sake of illustration, let us run the sampler with a much larger step size, increasing the standard deviation of the proposal distribution to 20: 
+
+```{r, eval = FALSE}
+n.it = 2500
+chain1 <- metropolis(y, n.it, proposal.sd = 20, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+chain2 <- metropolis(y, n.it, proposal.sd = 20, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+draws.2 <- data.frame(1:n.it, chain1, chain2)
+```
+
+The results are as follows:
+
+```{r too_large_step, echo=F}
+draws.2 <- draws.2[,c(1,2,4,3,5)]
+df <- melt(draws.2,measure.vars=c("X1","X1.1","X2","X2.1"),id.vars="X1.n.it")
+names(df)[1] <- "draw"
+mu <- df[1:(2*n.it),]
+sigma <- df[((2*n.it)+1):nrow(df),]
+
+p <- ggplot(mu,aes(draw,value,color=variable)) + geom_line(alpha=.7) + 
+   guides(color="none") + scale_color_manual(values = col.trans[,5]) + 
+  labs(color="",y = expression(mu), x="Draw") + theme(legend.position = "bottom")
+p
+p <- ggplot(sigma,aes(draw,value,color=variable)) + geom_line(alpha=.7) + 
+   guides(color="none") + scale_color_manual(values = col.trans[,5]) +
+  labs(fill="",y = expression(sigma), x="Draw") + theme(legend.position = "bottom")
+p
+```
+
+What is going on here? The wide proposal distribution is giving us a large number of proposals that have very low or zero posterior probability, which results in a very high rejection rate (about 99%). This is visible as flat lines in the plot. In practice, we will need a greater number of draws to get an acceptable approximation of the posterior distribution.
+
+
+```{r}
+# For basic versions of the plots above, run: plot(1:n.it, draws.2[, 2], type = "l", ylim = c(min(draws.2[, c(2, 4)]), max(draws.2[, c(2, 4)]))); lines(1:n.it, draws.2[, 4]); plot(1:n.it, draws.2[, 3], type = "l", ylim = c(min(draws.2[, c(3, 5)]), max(draws.2[, c(3, 5)]))); lines(1:n.it, draws.2[, 5])
+```
+
+
+#### Too small step size
+When the situation above occurs, a natural response is to make the proposal distribution narrower. Let us see what happens if we go a bit far and reduce the standard deviation of the innovations to 1/100:
+
+```{r, eval = FALSE}
+n.it = 2500
+chain1 <- metropolis(y, n.it, proposal.sd = .01, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+chain2 <- metropolis(y, n.it, proposal.sd = .01, 
+                     starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
+draws.3 <- data.frame(1:n.it, chain1, chain2)
+```
+Now we get the following results:
+
+```{r too_small_step, echo=F}
+draws.3 <- draws.3[,c(1,2,4,3,5)]
+df <- melt(draws.3,measure.vars=c("X1","X1.1","X2","X2.1"),id.vars="X1.n.it")
+names(df)[1] <- "draw"
+mu <- df[1:(2*n.it),]
+sigma <- df[((2*n.it)+1):nrow(df),]
+
+p <- ggplot(mu,aes(draw,value,color=variable)) + geom_line(alpha=.7) + 
+   guides(color="none") + scale_color_manual(values = col.trans[,5]) + 
+  labs(color="",y = expression(mu), x = "Draw") + theme(legend.position = "bottom")
+p
+p <- ggplot(sigma,aes(draw,value,color=variable)) + geom_line(alpha=.7) + 
+   guides(color="none") + scale_color_manual(values = col.trans[,5]) + 
+  labs(fill="",y = expression(sigma), x = "Draw") + theme(legend.position = "bottom")
+p
+```
+
+What do we see here? The small step size means the chain is moving very slowly around in the parameter space. It also gives a very high acceptance rate (about 97%), because few proposals are notably worse than the draws they compete with. With this set-up, we would need an extremely high number of iterations for the chains to converge and approximate the posterior distribution.
+
+```{r}
+# For basic versions of the plots above, run: plot(1:n.it, draws.3[, 2], type = "l", ylim = c(min(draws.3[, c(2, 4)]), max(draws.3[, c(2, 4)]))); lines(1:n.it, draws.3[, 4]); plot(1:n.it, draws.3[, 3], type = "l", ylim = c(min(draws.3[, c(3, 5)]), max(draws.3[, c(3, 5)]))); lines(1:n.it, draws.3[, 5]) 
+```
+
+### Final notes
+In this example, it easy to set a step size that makes the Metropolis algorithm work well. In more complicated settings, with a large number of potentially correlated parameters, the algorithm may be less well suited, and more advanced samplers (e.g. Hamiltonian MC/NUTS) may be preferable. It should also be noted that there are also several topics I have left aside here. The present example is so limited that we could keep things simple and not work with log probabilities. In my <a href="http://www.boelstad.net/post/bayesian_hierarchical_modeling/">next post</a>, I expand the sampler to analyze a hierarchical dataset, which requires using logs to avoid computational underflows. Other issues I have left aside include the calculation of convergence statistics and effective simulation draws, as well as the fact that these algorithms typically require a warm-up period -- with appropriate step size, there is hardly need for one in this example. 
+
+
+### How to cite
+<p>This material can be cited as follows:</p>
+<div class="Bib">
+<p>Bølstad, Jørgen. 2018. "An Introduction to Markov Chain Monte Carlo Sampling: Writing and Diagnosing a Metropolis Sampler in R". <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/mcmc_sampling_introduction/.</p>
+</div>
+
+Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:
+```{plaintext,eval=FALSE,highlight=FALSE}
+@Misc{boelstad:2018b,
+  Author = {B{\o}lstad, J{\o}rgen},
+  Title = {An Introduction to Markov Chain Monte Carlo Sampling: Writing and Diagnosing a Metropolis Sampler in R},
+  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  Url = {\url{http://www.boelstad.net/post/mcmc_sampling_introduction/}},
+  Year = {2018},
+  Month = {July 23}}
+```
+
+### Further reading
+<div class="Bib">
+<p>Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman & Hall/CRC Press.</p>
+
+</div>

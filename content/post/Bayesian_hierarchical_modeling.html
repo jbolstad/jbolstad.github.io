@@ -1,0 +1,195 @@
+---
+title: "Bayesian Hierarchical Modeling"
+subtitle: "Comparing partially pooled and unpooled models in R"
+author: "Jørgen Bølstad"
+type: "post"
+draft: false
+date: 2018-08-08
+tags: ["R", "Bayesian statistics"]
+---
+
+
+<p>I used to think so-called multilevel models were a little boring. I was interested in causal inference, and the people using these models did not seem to have better causal identification strategies than those running plain old regressions. I have gradually come to change my mind on these models, although it is not because I think they solve challenges of causal identification. It is rather because I think a large share of our data can be thought of as hierarchical, and that proper modeling help us make the most of such data.</p>
+<p>This post illustrates the benefits of Bayesian hierarchical modeling, by expanding the Metropolis sampler from my previous post to deal with more parameters. I will refer to hierarchical rather than multilevel models, as this highlights the use of hierarchical priors. The key advantage of the hierarchical approach is that it uses information across groups of observations to reduce our lower-level parameters’ sensitivity to noise. To demonstrate how this improves our estimates, this post compares a hierarchical model to a so-called unpooled model. (If you are unfamiliar with the basics of Bayesian inference, my <a href="http://www.boelstad.net/post/bayesian_statistics_introduction/">earlier posts</a> may be a better start.)</p>
+<div id="hierarchical-data" class="section level3">
+<h3>Hierarchical data</h3>
+<p>Hierarchical modeling is relevant when we have observations that are somehow grouped. It could be that we observe several individuals within different states, or that we have multiple observations per individual. In standard econometric terms, this will often give rise to autocorrelation and heteroskedasticity, calling for estimation of group-specific means and variances. In a regression setting, one might additionally estimate how coefficients vary between groups.</p>
+<p>Here, we will create a small hierarchical dataset, containing 5 noisy observations for each of 75 individuals (i.e. 375 observations in total). For a given individual <span class="math inline">\(i \in \{1, \ldots, n\}\)</span> and trial number <span class="math inline">\(j \in \{1, \ldots, m\}\)</span> we will denote the observed outcome <span class="math inline">\(y_{ij}\)</span>. In addition to <span class="math inline">\(y\)</span>, our data will contain the covariate <span class="math inline">\(x\)</span>, which also varies by <span class="math inline">\(i\)</span> and <span class="math inline">\(j\)</span>. The outcome <span class="math inline">\(y\)</span> will have normally distributed (and homoskedastic) errors, and depend linearly on <span class="math inline">\(x\)</span>, according to the following process: <span class="math inline">\(y_{ij} \sim N(\alpha_i + \beta_i x_{ij},\sigma^2)\)</span>. A key point here is that each individual will have its own true intercept, <span class="math inline">\(\alpha_i\)</span>, as well as its own coefficient on <span class="math inline">\(x\)</span>, <span class="math inline">\(\beta_i\)</span>. These individual-specific parameters are in turn drawn from their own distributions: <span class="math inline">\(\alpha \sim N(2,1)\)</span>, and <span class="math inline">\(\beta \sim N(-2,1)\)</span>.</p>
+<pre class="r"><code>set.seed(1)
+n = 75 # Number of individuals
+m = 5  # Number of observations for per individual
+alpha &lt;- rnorm(n, 2, 1) # True individual-specific intercepts
+beta &lt;- rnorm(n, -2, 1) # True individual-specific coefficients
+x &lt;- matrix(rnorm(n * m, 0, 1), ncol = m)
+y &lt;- matrix(NA, n, m)
+for (i in 1:n) { 
+  for (j in 1:m) { 
+    y[i, j] &lt;- rnorm(1, alpha[i] + beta[i] * x[i, j], 2) } }</code></pre>
+</div>
+<div id="the-likelihood" class="section level3">
+<h3>The likelihood</h3>
+<p>We will use a likelihood function that accurately reflects the data-generating process. In other words, we have:</p>
+<p><span class="math display">\[p(y|x,\alpha,\beta,\sigma) = \prod^n_{i=1}\prod^m_{j=1} N(y_{ij}|\alpha_i + \beta_i x_{ij}, \sigma^2)\]</span></p>
+<p>However, as we increase the number of observations, some of these products will get exceedingly small, so we will need to work with log-densities to prevent computational underflows. Taking the log of the densities means we will sum the point-wise log-probabilities: <span class="math display">\[\text{ln}(p(y|x,\alpha,\beta,\sigma)) = \sum^n_{i=1}\sum^m_{j=1} \text{ln}(N(y_{ij}|\alpha_i + \beta_i x_{ij}, \sigma^2))\]</span></p>
+<p>In order to keep track of the parameters when we pass their values between functions, we will pass them as a named list containing both single parameters and vectors of parameters. We will also use <code>apply</code> for somewhat efficient looping over observations:</p>
+<pre class="r"><code>log.likelihood &lt;- function(y, x, pars) { 
+  # Loop over each row in data and its according alpha- and beta-parameter:
+  sum(log(apply(cbind(y, x, pars$alpha, pars$beta), 1, function(mat_i) { 
+    # Loop over each observation in this row (i.e. individual):
+    apply(cbind(mat_i[1:m], mat_i[(m + 1):(2 * m)]), 1, function(dat_ij) { 
+      # Compute the probability density for observation ij:
+      dnorm(dat_ij[1], mat_i[(2 * m) + 1] + mat_i[(2 * m) + 2] * dat_ij[2], pars$sigma) 
+    })
+  }))) 
+}</code></pre>
+</div>
+<div id="priors-for-hierarchical-data" class="section level3">
+<h3>Priors for hierarchical data</h3>
+<p>The key question is how we model the <span class="math inline">\(\alpha\)</span>- and <span class="math inline">\(\beta\)</span>-parameters. A simple option is to do <em>complete pooling</em>, assuming the <span class="math inline">\(\alpha\)</span>’s and <span class="math inline">\(\beta\)</span>’s are equal for all individuals, and estimating a single <span class="math inline">\(\alpha\)</span> and a single <span class="math inline">\(\beta\)</span>. This is similar to running a single regression on the whole dataset, which is not particularly interesting, so we will leave this option aside here.</p>
+<div id="no-pooling" class="section level4">
+<h4>No pooling</h4>
+<p>At the other extreme, we can give each individual their own <span class="math inline">\(\alpha\)</span>- and <span class="math inline">\(\beta\)</span>-parameter and place wide, flat priors on each: <span class="math inline">\(\alpha_i \sim U(-100,100)\)</span>, and <span class="math inline">\(\beta_i \sim U(-100,100)\)</span>. Models of this kind are often referred to as <em>no pooling</em> models, and in our case, this is similar to running a separate regression for each individual. If also add a flat prior on the variance, we get the following prior distribution: </p>
+<p><span class="math display">\[\begin{aligned}p(\alpha,\beta,\sigma) = &amp;\prod^n_{i=1}\big[U(\alpha_i|-100,100) \times U(\beta_i|-100,100)\big] \times U(\sigma|0,10)\end{aligned}\]</span></p>
+<p>However, we will be using the log-prior:</p>
+<p><span class="math display">\[\begin{aligned}\text{ln}(p(\alpha,\beta,\sigma)) = &amp;\sum^n_{i=1}\big[\text{ln}(U(\alpha_i|-100,100)) + \text{ln}(U(\beta_i|-100,100))\big] + \text{ln}(U(\sigma|0,10))\end{aligned}\]</span> In R, we have:</p>
+<pre class="r"><code>log.prior.1 &lt;- function(pars) {
+  sum(log(dunif(pars$alpha, -100, 100))) + 
+  sum(log(dunif(pars$beta, -100, 100))) + 
+  log(dunif(pars$sigma, 0, 10)) }</code></pre>
+</div>
+<div id="partial-pooling" class="section level4">
+<h4>Partial pooling</h4>
+<p>Between the extremes of complete pooling and no pooling, we have the option of <em>partial pooling</em>, which is typically what is meant by hierarachical modeling. Here, we start from the assumption that the parameters come from a common population distribution – which is typically self-evident. While we could specify a certain prior representing our beliefs regarding population distribution, there is a better option. If we choose a parametric density function – assuming, for instance, that the population follows a normal distribution – then we can let the parameters of that distribution be estimated from the data. Instead of fixing those <em>hyperparameters</em>, we give them their own, higher-level priors – <em>hyperpriors</em>. An interesting point about the hyperparameters is that they do not change the likelihood function – they only influence the posterior through the prior on the lower-level parameters.</p>
+<p>In our case, we will assume the <span class="math inline">\(\alpha\)</span>’s and <span class="math inline">\(\beta\)</span>’s come from two distinct normal distributions: <span class="math inline">\(\alpha_i \sim N(\mu_\alpha,\sigma_\alpha^2)\)</span>, and: <span class="math inline">\(\beta_i \sim N(\mu_\beta,\sigma_\beta^2)\)</span>. We further add hyperpriors on the population parameters: <span class="math inline">\(\mu_\alpha, \mu_\beta \sim N(0,3^2)\)</span>, and: <span class="math inline">\(\sigma_\alpha, \sigma_\beta \sim U(0,10)\)</span>. For the variance, we use the same flat prior as above: <span class="math inline">\(\sigma \sim U(0,10)\)</span>. Our joint prior distribution is then:</p>
+
+<p><span class="math display">\[\begin{aligned}p(\alpha,\beta,\mu_\alpha,\mu_\beta,\sigma_\alpha,\sigma_\beta,\sigma) = &amp;\prod^n_{i=1}\big[N(\alpha_i|\mu_\alpha,\sigma_\alpha^2) \times N(\beta_i|\mu_\beta,\sigma_\beta^2)\big]~\times \cr[3ex]
+&amp;N(\mu_\alpha|0,3^2) \times N(\mu_\beta|0,3^2)~\times \cr[3ex]
+&amp;U(\sigma_\alpha|0,10) \times U(\sigma_\beta|0,10) \times U(\sigma|0,10)\end{aligned}\]</span></p>
+<p>And the log-prior is:</p>
+<p><span class="math display">\[\begin{aligned}\text{ln}(p(\alpha,\beta,\mu_\alpha,\mu_\beta,\sigma_\alpha,\sigma_\beta,\sigma)) = &amp;\sum^n_{i=1}\big[\text{ln}(N(\alpha_i|\mu_\alpha,\sigma_\alpha^2))+\text{ln}(N(\beta_i|\mu_\beta,\sigma_\beta^2))\big]~+\cr[3ex]
+&amp;\text{ln}(N(\mu_\alpha|0,3^2))+\text{ln}(N(\mu_\beta|0,3^2))~+\cr[3ex]
+&amp;\text{ln}(U(\sigma_\alpha|0,10))+\text{ln}(U(\sigma_\beta|0,10))+\text{ln}(U(\sigma|0,10))\end{aligned}\]</span></p>
+<p>Writing this up as a function in R, we have:</p>
+<pre class="r"><code>log.prior.2 &lt;- function(pars) {
+  sum(log(dnorm(pars$alpha, pars$mu.alpha, pars$sigma.alpha))) + 
+  sum(log(dnorm(pars$beta, pars$mu.beta, pars$sigma.beta))) +
+  log(dnorm(pars$mu.alpha, 0, 3)) + log(dnorm(pars$mu.beta, 0, 3)) + 
+  log(dunif(pars$sigma.alpha, 0, 10)) + log(dunif(pars$sigma.beta, 0, 10)) + 
+  log(dunif(pars$sigma, 0, 10)) }</code></pre>
+
+</div>
+</div>
+<div id="posterior-distributions" class="section level3">
+<h3>Posterior distributions</h3>
+<p>We will be working with the unnormalized log-posterior density, which is the sum of the log-likelihood and the log-prior. For the unpooled model, we have:</p>
+<p><span class="math display">\[\text{ln}(p(\alpha,\beta,\sigma|y,x)  \propto \text{ln}(p(y|x,\alpha,\beta,\sigma))+  \text{ln}(p(\alpha,\beta,\sigma)) \]</span></p>
+<pre class="r"><code>log.unnorm.posterior.1 &lt;- function(y, x, pars) { 
+  log.likelihood(y, x, pars) + log.prior.1(pars) }</code></pre>
+<p>For the hierarchical model, we have:</p>
+<p><span class="math display">\[\text{ln}(p(\alpha,\beta,\mu_\alpha,\mu_\beta,\sigma_\alpha,\sigma_\beta,\sigma|y,x)  \propto \text{ln}(p(y|x,\alpha,\beta,\sigma))+  \text{ln}(p(\alpha,\beta,\mu_\alpha,\mu_\beta,\sigma_\alpha,\sigma_\beta,\sigma)) \]</span></p>
+<pre class="r"><code>log.unnorm.posterior.2 &lt;- function(y, x, pars) { 
+  log.likelihood(y, x, pars) + log.prior.2(pars) }</code></pre>
+</div>
+<div id="setting-up-the-sampler" class="section level3">
+<h3>Setting up the sampler</h3>
+<p>To estimate our parameters we will use a slightly modified version of the Metropolis sampler that was introduced in the previous post. Most importantly, we will make the code a bit more general, so that it can be applied to an arbitrary number of parameters. Our proposal function now takes a list of parameters – or vectors of parameters – and returns a list with the same dimensions:</p>
+<pre class="r"><code>proposals &lt;- function(pars, proposal.sd) {
+  sapply(pars, function(x) { sapply(x, function(x) { x + rnorm(1, 0, proposal.sd) }) }) }</code></pre>
+<p>To use log-probabilities as long as possible, we now calculate the acceptance ratio as a difference in log-probabilities before exponentiating. We also add a counter of accepted proposals to calculate the sampler’s average acceptance rate. The sampler code now looks as follows:</p>
+<pre class="r"><code>metropolis &lt;- function(n.it,proposal.sd, y, x, log.unnorm.posterior, starting.values) {
+  draws &lt;- vector()
+  n.accept &lt;- 0
+  current.draw &lt;- starting.values
+  for (t in 1:n.it) {
+    proposal &lt;- proposals(current.draw, proposal.sd)
+    if (sum(c(proposal$sigma.alpha, proposal$sigma.beta, proposal$sigma) &lt;= 0) &gt; 0) {
+      acceptance.ratio = 0 }
+    else {acceptance.ratio &lt;- exp(log.unnorm.posterior(y, x, proposal) - 
+      log.unnorm.posterior(y, x, current.draw)) }
+    random.threshold &lt;- runif(1, 0, 1)
+    if (random.threshold &lt;= acceptance.ratio) {
+      current.draw &lt;- proposal
+      n.accept &lt;- n.accept + 1 }
+    draws &lt;- rbind(draws, unlist(current.draw)) }
+  return(list(draws = draws, accept.rate = n.accept / n.it)) }</code></pre>
+</div>
+<div id="obtaining-estimates" class="section level3">
+<h3>Obtaining estimates</h3>
+<p>Now, let us obtain 10,000 draws for each of our two specifications (which may take a while):</p>
+<pre class="r"><code>n.it &lt;- 10000
+# Unpooled model:
+starting.values.1 &lt;- list(alpha=rnorm(n, 2, .75), beta = rnorm(n, -2, .75), 
+                          sigma = runif(1, 1.75, 2.25))
+results.1 &lt;- metropolis(n.it, proposal.sd = .125, y, x, 
+                        log.unnorm.posterior.1, starting.values.1)
+# Hierarchical model:
+starting.values.2 &lt;- list(alpha = rnorm(n, 2, .75), beta = rnorm(n, -2, .75),
+                          mu.alpha = rnorm(1, 2, .25), mu.beta = rnorm(1, -2, .25),
+                          sigma.alpha = runif(1, .75, 1.25), 
+                          sigma.beta = runif(1, .75, 1.25),
+                          sigma = runif(1, 1.75, 2.25))
+results.2 &lt;- metropolis(n.it, proposal.sd = .1, y, x, 
+                        log.unnorm.posterior.2, starting.values.2)</code></pre>
+
+<p>We will drop the first 2000 draws to allow the sampler to find its equilibrium distribution. (I am otherwise leaving the issue of convergence aside here, so you will just have to trust me.)</p>
+<pre class="r"><code>warmup &lt;- n.it / 5
+draws.subset.1 &lt;- results.1$draws[(warmup + 1):n.it, ]
+draws.subset.2 &lt;- results.2$draws[(warmup + 1):n.it, ]</code></pre>
+<p>Finally, we obtain point estimates from the models by calculating posterior means:</p>
+<pre class="r"><code>unpooled.est &lt;- colMeans(draws.subset.1)
+hierarchical.est &lt;- colMeans(draws.subset.2)</code></pre>
+</div>
+<div id="comparing-the-models" class="section level3">
+<h3>Comparing the models</h3>
+<p>Asymptotically, the unpooled and the hierarchical model will yield the same result: With an infinite number of observations per individual, the likelihood will prevail anyhow (as long as the prior does not rule out the true parameter values). However, the typical situation for hierarchical analysis is one where we have few observations per cluster (i.e. individual in our case), and then these choices matter. To illustrate the differences, the figure below plots the posterior means for the <span class="math inline">\(\alpha\)</span>’s and <span class="math inline">\(\beta\)</span>’s for each model. The estimates are shown in dark blue, while the true values are in lighter transparent blue:</p>
+<p><img src="/post/Bayesian_hierarchical_modeling_files/figure-html/plotestimates-1.svg" width="705.6" style="display: block; margin: auto auto auto 0;" /></p>
+<p>One might think the hierarchical model has more informative priors on the lower-level parameters, but this would not be entirely correct. The uniform priors of the unpooled models are not “uninformative” – in fact, they attribute significant prior probability to areas of the parameter space that we do not truly consider plausible. In other words, these priors can be seen as both informative and implausible. The consequence of the flat priors of the unpooled model is to pull the estimates away from each other. In frequentist terms, these estimates are unbiased, but have high sampling variance – they are very sensitive to noise, as a few large errors in the same direction are allowed to pull the estimates into implausible regions of the parameter space.</p>
+<p>In contrast, the hierarchical model uses information from all individuals to estimate the population distribution from which the lower-level parameters are drawn. Compared to the unpooled model, this prior structure pulls the estimates towards the population distribution – an effect often referred to as <em>shrinkage</em>. This yields estimates that are considerably less sensitive to noise, as we require more observations and a narrower likelihood to pull the posterior probabilities into unusual regions of the parameter space. Accordingly, the plot shows hierarchical estimates that are a lot more concentrated than the unpooled ones.</p>
+<p>Is one model better? If our sole criterion is for the lower-level parameters to be unbiased, then we would prefer the unpooled model. But this would typically not be a good choice, as it ignores the sampling variance and thus sensitivity to noise. A straightforward way to assess bias and variance together is to consider mean squared errors (MSE) or their root (RMSE). Here, it is useful to do so across the sets of <span class="math inline">\(\alpha\)</span>- and <span class="math inline">\(\beta\)</span>-estimates. For a given set of <span class="math inline">\(\alpha\)</span>-estimates, this means: <span class="math display">\[\text{RMSE}(\hat\alpha) = \sqrt{\frac{1}{n}\sum_{i=1}^n (\hat\alpha_i - \alpha_i)^2}\]</span> The RMSEs for each model are shown in the upper-right corner of the plot above. The values are considerably lower for the hierarchical model, which means this model on average yields estimates that are closer to the true parameter values.</p>
+<pre class="r"><code># The RMSEs can be calculated as follows:
+# alpha.unpooled &lt;- unpooled.est[1:n]
+# sqrt(mean((alpha.unpooled-alpha)^2)) # RMSE, alpha, unpooled model
+# alpha.hierarchical &lt;- hierarchical.est[1:n]
+# sqrt(mean((alpha.hierarchical - alpha)^2)) # RMSE, alpha, hierarchical model
+# beta.unpooled &lt;- unpooled.est[(n + 1):(2 * n)]
+# sqrt(mean((beta.unpooled - beta)^2)) # RMSE, beta, unpooled model
+# beta.hierarchical &lt;- hierarchical.est[(n + 1):(2 * n)]
+# sqrt(mean((beta.hierarchical - beta)^2)) # RMSE, beta, hierarchical model</code></pre>
+<pre class="r"><code># For a basic version of the plot above run: par(mfrow=c(1,2)); plot(alpha.unpooled, beta.unpooled, type = &quot;n&quot;, xlim = c(-5, 7), ylim = c(-7, 5)); for (i in 1:n) { arrows(alpha.unpooled, beta.unpooled, alpha[i], beta[i], col = &quot;lightgray&quot;, length = 0) }; points(alpha, beta, col = &quot;lightgray&quot;); points(alpha.unpooled, beta.unpooled); plot(alpha.hierarchical, beta.hierarchical, type = &quot;n&quot;, xlim=c(-5, 7), ylim = c(-7, 5)); for (i in 1:n) { arrows(alpha.hierarchical, beta.hierarchical, alpha[i], beta[i], col = &quot;lightgray&quot;, length = 0) }; points(alpha, beta, col = &quot;lightgray&quot;); points(alpha.hierarchical, beta.hierarchical)</code></pre>
+</div>
+<div id="final-notes" class="section level3">
+<h3>Final notes</h3>
+<p>In this post, I have left aside the issues of MCMC convergence and how to sample efficiently. The Metropolis sampler was used because it is easy to implement manually – not because it is well-suited. For an actual analysis of this kind, it would make more sense to use <a href="http://www.mc-stan.org" target="_blank">NUTS</a> (see the next post). It could also be noted that while this post has focused on hierarchical modeling within a Bayesian framework – which is intuitive and straightforward – it is possible to achieve something similar within a frequentist framework. As Gelman <a href="http://andrewgelman.com/2018/03/24/economist-wrote-asking-make-sense-fit-bayesian-hierarchical-models-instead-frequentist-random-effects/" target="_blank">notes</a>, “anything Bayesian can be done non-Bayesianly” – it is just not clear why you would want to.</p>
+
+
+</div>
+<div id="how-to-cite" class="section level3">
+<h3>How to cite</h3>
+<p>
+This material can be cited as follows:
+</p>
+<div class="Bib">
+<p>
+Bølstad, Jørgen. 2019. “The Benefits of Bayesian Hierarchical Modeling: Comparing Partially Pooled and Unpooled Models in R”. <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/bayesian_hierarchical_modeling/.
+</p>
+</div>
+<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:</p>
+<pre class="text"><code>@Misc{boelstad:2018c,
+  Author = {B{\o}lstad, J{\o}rgen},
+  Title = {The Benefits of Bayesian Hierarchical Modeling: Comparing Partially Pooled and Unpooled Models in R},
+  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  Url = {\url{http://www.boelstad.net/post/bayesian_hierarchical_modeling/}},
+  Year = {2018},
+  Month = {August 8}}</code></pre>
+</div>
+<div id="further-reading" class="section level3">
+<h3>Further reading</h3>
+<div class="Bib">
+<p>
+Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman &amp; Hall/CRC Press.
+</p>
+<p>
+McElreath, Richard. 2016. <i>Statistical Rethinking: A Bayesian Course with Examples in R and Stan.</i> London: Chapman &amp; Hall/CRC Press.
+</p>
+</div>
+</div>

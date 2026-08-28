@@ -1,0 +1,21 @@
+---
+title: "A New Website Is Born: Estimite.com"
+subtitle: "Forecasting the 2021 Norwegian Election using R and Stan"
+author: "Jørgen Bølstad"
+output: html_document
+type: "post"
+draft: false
+date: 2021-01-20
+tags: ["Applied data science", "Bayesian statistics"]
+---
+
+
+
+<p>Bayesian modeling has proven its usefulness for poll aggregation and election forecasting – for instance through <a href="https://fivethirtyeight.com">FiveThirtyEight</a>. However, in Norway, media coverage of public opinion trends still tends to focus on a single poll at a time, or a simple average of polls at best. I was convinced it would be possible to do better, and after about three times as many long days and nights as I thought it would take, the result is finally live – both in <a href="https://www.estimite.com/no/post/stortingsvalget-2021/">Norwegian</a> and <a href="https://www.estimite.com/post/norwegian-election-2021/">English</a> – at <a href="https://www.estimite.com/">Estimite.com</a>.</p>
+<p>I have landed on a fully automated production process, where a script checks for new data, refits the model if necessary, and then rebuilds and publishes the website. This is all done using R, Stan, and a few shell scripts.</p>
+<p>Here are some key lessons from this project:</p>
+<ol style="list-style-type: decimal">
+<li><p>Stan is great for this, because it lets us define generated quantities, and get all kinds of relevant outputs from a single, joint simulation.</p></li>
+<li><p>You should not underestimate how many technical challenges such projects entail and how much time it takes to fix them – especially if you care about details.</p></li>
+<li><p>[Bonus lesson] If you do work that the media find interesting, and you generally pick up the phone when journalists call, your research agenda may get completely derailed – but, hey, the problem is mostly self-inflicted.</p></li>
+</ol>

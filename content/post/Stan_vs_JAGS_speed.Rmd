@@ -1,0 +1,625 @@
+---
+title: "How Efficient is Stan Compared to JAGS?"
+subtitle: "Conjugacy, pooling, centering, and posterior correlations"
+author: "Jørgen Bølstad"
+type: "post"
+draft: false
+date: 2019-01-02
+tags: ["R", "Bayesian statistics", "Stan"]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=7.35, fig.height=5, fig.align="left", dev="svg") 
+library(ggplot2)
+library(reshape2)
+
+library(extrafont)
+library(ggthemes)
+source("../../knit-data/colors.R")
+```
+
+For a good while JAGS was your best bet if you wanted to do MCMC on a distribution of your own choosing. Then Stan came along, potentially replacing JAGS as the black-box sampler of choice for many Bayesians. But how do they compare in terms of performance? The obvious answer is: It depends. In fact, the question is nearly impossible to answer properly, as any comparison will be conditional on the data, model specifications, test criteria, and more. Nevertheless, this post offers a small simulation study.
+
+The approach taken here is to compare the models in terms of seconds required to produce an effective simulation draw for the parameter with the least effective draws. Simulation time is taken to exclude compilation time, but include adaptation and sufficient warm-up for the chains to get into the typical set. The samplers are tested in a hierarchical setting, using six different models. The models differ in terms of pooling, conjugacy, and centered parameter specifications. The results are roughly as expected: JAGS exhibits both blazing fast and incredibly slow sampling, while Stan delivers somewhat more stable performance, being relatively efficient also in harder scenarios.
+
+### Data
+
+This mini-study generates hierarchical datasets, containing $m$ noisy observations for each of $n$ individuals. For a given individual $i \in \{1, \ldots, n\}$ and trial number $j \in \{1, \ldots, m\}$, we have the observed outcome $y_{ij}$. In addition to $y$, the data contain the covariate $x$, which also varies by $i$ and $j$. The outcome $y$ will have normally distributed, homoskedastic errors, and depend linearly on $x$, according to the following process: $y_{ij} \sim N(\alpha_i + \beta_i x_{ij},\sigma^2)$. Each individual will have its own true intercept, $\alpha_i$, as well as its own coefficient on $x$, $\beta_i$. These individual-specific parameters are in turn drawn from their own distributions: $\alpha \sim N(2,1)$, and $\beta \sim N(-2,1)$. The code to define the data-generating process (and load necessary packages) is:
+
+```{r data, message=FALSE}
+library(rstan)
+library(rjags)
+library(MASS)   # To sample from multivariate normal
+library(dclone) # To run JAGS in parallel
+set.seed(1)
+create.data <- function(n = 500, m = 5, covar = 0, xmean = 0) {
+  Sigma <- matrix(c(1, covar, covar, 1), 2, 2)
+  coefs <- mvrnorm(n, mu = c(2, -2), Sigma)
+  x <- matrix(rnorm(n * m, xmean, 1), ncol = m)
+  y <- matrix(NA, n, m)
+  for (i in 1:n) { for (j in 1:m) { y[i, j] <- rnorm(1, coefs[i, 1] + coefs[i, 2] * x[i, j], 2) } }
+  dat <- list(n = n, m = m, x = x, y = y)
+  return(dat)
+}
+```
+
+#### Posterior parameter correlations
+
+A key issue for MCMC samplers is how strong posterior correlations there are between the parameters, which in turn depends on both the data and the model specification. Strong correlations mean the parameters are hard to separate, posing a more difficult task for the samplers. JAGS, which relies on either Gibbs sampling or Metropolis-Hastings, is likely to suffer under such circumstances, while Stan might be expected perform better. With the present data, we can minimize posterior correlations by centering $x$. Conversely, we can create correlations by moving its mean away from zero. The larger the mean relative to the standard deviation, the harder it will be to separate the constants from the coefficients. The tests below entail two scenarios that differ in this respect. One scenario with **"weak correlations"**: $x_{ij} \sim N(0,1)$, and one with **"strong correlations"**: $x_{ij} \sim N(2,1)$.
+
+### Models
+We will use a likelihood function that accurately reflects the data-generating process. In other words, we have:
+
+$$p(y|x,\alpha,\beta,\sigma) = \prod^n_{i=1}\prod^m_{j=1} N(y_{ij}|\alpha_i + \beta_i x_{ij}, \sigma^2)$$
+
+We will test five different models to see how the results differ across key specification choices. The main choices are: whether to do some pooling of individual coefficients, whether to use conjugate priors, and whether to use non-centered parameter specifications. 
+
+#### Hierarchical, weakly informative, fully conjugate (centered and non-centered)
+We will start with a model doing partial pooling, assuming the $\alpha$'s and $\beta$'s are drawn from common population distributions: 
+$$\alpha_i \sim N(\mu_\alpha,\sigma_\alpha^2), ~~~ \beta_i \sim N(\mu_\beta,\sigma_\beta^2)$$
+This model is fully conjugate, with normal priors on the means and inverse Gamma priors on the variances. (Note that the last parameter in the inverse gamma here is a scale and not a rate parameter.) The hyperpriors and the prior on $\sigma$ are set to be weakly informative:
+$$\mu_\alpha,\mu_\beta \sim N(0,3^2), ~~~ \sigma_\alpha^2,\sigma_\beta^2,\sigma^2 \sim \text{Inv-Gamma}(1.5,2)$$ 
+
+In some situations (with little data and/or correlated parameters), one can achieve more efficient and accurate sampling by using a non-centered parameterization (see Papaspiliopoulos et al. 2007, Betancourt and Girolami 2013). For the $\alpha$-parameters, this can be done by specifying $\alpha_i = \mu_\alpha + \sigma_\alpha \alpha^*_i$, where $\alpha^*_i \sim N(0,1)$. The tests below entail both a centered and non-centered version of the conjugate model. (It is tricky to do non-centering without breaking JAGS' ability to exploit the conjugacy, so the non-centered JAGS version only separates out the common mean).
+
+
+#### Hierarchical, weakly informative, partly conjugate (centered and non-centered)
+
+
+The next model is very similar, but only partly conjugate, as the inverse Gamma priors on the variances are replaced with gamma priors on the standard deviations. The new priors are set to be approximately as informative as the inverse Gamma's  (although they are necessarily different). The model is then:
+
+$$\alpha_i \sim N(\mu_\alpha,\sigma_\alpha^2), ~~~ \beta_i \sim N(\mu_\beta,\sigma_\beta^2)$$
+
+$$\mu_\alpha,\mu_\beta \sim N(0,3^2), ~~~ \sigma_\alpha,\sigma_\beta,\sigma \sim \text{Gamma}(2,.5)$$
+
+(Note that the last parameter in the gamma is a rate parameter, i.e. inverse scale).
+
+#### Hierarchical, weakly informative, non-conjugate, centered
+
+The next model is completely non-conjugate, replacing the normal distributions with student-t distributions with 100 degrees of freedom. This is practically the same as the normal, but should prevent JAGS from using Gibbs sampling. 
+
+$$\alpha_i \sim \text{Student-t}(100,\mu_\alpha,\sigma_\alpha^2), ~~~ \beta_i \sim \text{Student-t}(100,\mu_\beta,\sigma_\beta^2)$$
+
+$$\mu_\alpha,\mu_\beta \sim \text{Student-t}(100,0,3^2), ~~~ \sigma_\alpha,\sigma_\beta,\sigma \sim \text{Gamma}(2,.5)$$
+
+#### Unpooled with uniform priors
+
+The final model is an unpooled model with uniform priors on all parameters. This model does not make too much sense here (as we know the individual parameters are drawn form a common distribution), but it may serve to illustrate performance in more difficult circumstances. The model is potentially challenging in that there is no conjugacy, no pooling of information across units, and no other help from the priors, which results in larger posterior variances (and potentially covariances):
+$$\alpha_i,\beta_i \sim U(-100,100), ~~~ \sigma \sim U(0,100)$$ 
+
+This model only takes a few lines of Stan code, as we get uniform priors by not specifying anything (except relevant limits). 
+
+### Approach
+A key question is how to compare the samplers in way that is both fair and relevant for actual applications. As MCMC draws tend to be auto-correlated, the nominal number of simulation draws is less interesting than the number of effective draws (adjusting for auto-correlation). Furthermore, if we decide on a lower limit for how many effective draws we require, we will most likely want to apply this requirement to all parameters. In other words, the key question is how efficiently we are sampling the parameter with the fewest effective draws (after the chains have found the typical set). Finally, the most relevant measure of efficiency is probably time per effective draw. 
+
+
+However, it is not clear what is the most relevant specification of time-consumption either. Stan needs to compile models before running, while JAGS does not. Fortunately, Stan models only need to be compiled once, and it usually takes a minute or two. If you are using an already-compiled model, there is no loss of time. Similarly, if your model is sufficiently complicated to require a long run, compilation time is essentially irrelevant. There is really only one situation in which compilation-time counts, and that is when you are developing a new model, testing it on a small dataset to make things faster, but still having to re-compile for every little change you to make. Given the points above, however, I think it is most reasonable to compare run-times without including compilation-time.
+
+Another issue is whether to include adaptation and warm-up time. I think it is reasonable to include this, as these phases are typically required for any analysis. If a sampler takes very long to converge to the target distribution, this is a relevant cost of using it. Including these phases may, however, introduce some inaccuracy: As we take more post-warm-up draws, the share of time spent on warm-up decreases. This makes the results depend on the length of the post-warm-up run, which is clearly not ideal, but I am still sticking to this approach for now. (I suppose the best approach might be to set the run-length for each model aiming for a specific minimum number of effective draws for all parameters, but this might take extremely long in the slowest instances.)
+
+The models have been fit to 200 datasets for each of the two posterior-correlation scenarios. The datasets have been kept fairly small: $n = 250$ and $m=5$. The patterns reported below seem to remain when I scale up the data, but further testing may be called for (as the speed of JAGS may suffer more as the scale increases). For each software, I use three out of four available processor cores, and run one parallel chain on each core. To calculate split Rhats and the number of effective draws, I am using the specifications from Gelman et al. 2014 (BDA3). Setting the length of the warm-up phase is a bit tricky, as a longer warm-up is required for the more challenging combinations of data and models. By trial and error, I have set specific warm-up lengths for each model in each scenario so that the models typically converge. In the most challenging situations, the models will sometimes still not fully converge in time, and in these instances the results are not reported. (This may slightly favor models that are performing poorly, but it should not change the general patterns.)
+
+### Results
+The results are shown on a logged scale in the boxplot below. The scenario with weak posterior correlations offers ideal conditions, and when JAGS is given a fully conjugate hierarchical model, it is sampling very fast here -- showing the fastest performance in this test. Stan is also fast in this situation, but does take about 3 times as long JAGS. The non-centered parameterization appears to slow down both samplers slightly, suggesting it adds to the computational load without much gain. When we move to the partly conjugate models, JAGS gets notably slower, and about as fast as Stan, whether we use the centered or non-centered specification.
+
+Moving from a partly conjugate to completely non-conjugate model (replacing normals with t-distributions), makes JAGS about three times slower still, while Stan retains its performance, being several times faster. Turning to the unpooled models with uniform priors, Stan gets slightly faster, while JAGS gets a bit slower -- now sampling nearly five times slower than Stan.
+
+As the posterior correlations increase, the patterns are similar, but with some notable changes: JAGS gets comparatively slower for the fully conjugate models, but still delivers some of the fastest performance. It is now on par with Stan's performance for the non-centered specification. If we look at the partly conjugate models, non-centering speeds up Stan seven-fold in this scenario, while JAGS sees no such benefit. Finally, for the unpooled model with uniform priors, Stan is pretty fast, while JAGS is very slow -- in fact, JAGS is 65 times slower than Stan here.
+
+In sum, JAGS's performance varies a lot: It is about 765 times faster using a fully conjugate, centered model in the easy scenario than using an unpooled model in the harder scenario. For Stan, the equivalent factor is 4.
+
+```{r, echo=F}
+load("../../knit-data/stan-vs-jags-speed-time-per-draw.RData")
+
+means <- tapply(results[,11],interaction(results[,5],results[,6],results[,3]),mean)
+
+results <- data.frame(results)
+names(results)[5] <- 'sampler'
+names(results)[3] <- 'xm'
+names(results)[7:11] <- c('rhat','time','mean.size','min.size','time.per.draw')
+results[,5] <- factor(2-results[,5],labels=c('Stan','JAGS'))
+
+results[,6] <- factor(results[,6],labels=c('Unpooled, uniform priors','Hierarchical, non-conjugate, centered','Hierarchical, partly conjugate, centered','Hierarchical, partly conjugate, non-centered', 'Hierarchical, fully conjugate, centered','Hierarchical, fully conjugate, non-centered'))
+
+results$n <- factor(results$n)
+levels(results$n) <- paste("n = ", levels(results$n), sep="")
+results$xm <- factor(results$xm)
+levels(results$xm) <- c("Weak posterior\n correlations","Strong posterior\n correlations")
+
+p <- ggplot(results[results$rhat<1.2,], aes(as.factor(md), time.per.draw, fill=sampler, color=sampler)) + 
+    guides(fill = FALSE,colour = guide_legend(title=NULL,reverse = TRUE,override.aes = list(color=col.solid[2:1,8],   fill=col.trans[2:1,5]  ))) +
+    geom_boxplot(position=position_dodge(.75),width=.6,
+  outlier.alpha=.3,outlier.size=.5) + coord_flip() + facet_grid(xm ~ .) +
+    labs(x="",y="Seconds per effective draw") + scale_y_continuous(trans='log10') + 
+  scale_fill_manual(values = col.trans[,5]) + 
+  scale_color_manual(values = col.solid[,8]) + 
+  theme(legend.position = "bottom", axis.text.y=element_text(size=11))
+p
+
+```
+
+Another question is how well the samplers are exploring the target distribution. The paper on NUTS by Hoffman and Gelman (2014) shows that NUTS can perform much better than Gibbs sampling and Random Walk Metropolis in exploring difficult posteriors with correlated parameters. At the most extreme, the authors use a highly correlated 250-dimensional distribution, whereas the data used here mainly entail pairwise parameter correlations (between pairs of $\alpha$'s and $\beta$'s, and between their hyperparameters in the partially pooled models). The plots below show 1,000 randomly selected draws of $\alpha_1$ and $\beta_1$ from a single trial using unpooled models with uniform priors. Visually, the samples produced by JAGS and Stan are very similar here. It is just that JAGS takes much longer to converge and produce effective draws.
+
+```{r, echo=F, fig.width=7.3, fig.height=3.5, warning=FALSE,message=FALSE}
+load("../../knit-data/stan-vs-jags-speed-parameter-draws.RData")
+
+
+set.seed(1234)
+dim(jags) <- c(dim(jags)[1]*dim(jags)[2],dim(jags)[3])
+jags <- jags[sample(size=1000,1:nrow(jags),replace=F),]
+dim(stan) <- c(dim(stan)[1]*dim(stan)[2],dim(stan)[3])
+stan <- stan[sample(size=1000,1:nrow(stan),replace=F),]
+
+plotdat <- data.frame(rbind(stan,jags),rbind(cbind(rep("Stan",nrow(stan))),cbind(rep("JAGS",nrow(jags)))))
+names(plotdat) <- c("alpha[1]","beta[1]","sampler")
+jags <- data.frame(jags)
+stan <- data.frame(stan)
+names(jags) <- c("alpha[1]","beta[1]")
+names(stan) <- c("alpha[1]","beta[1]")
+
+p <- ggplot(plotdat, aes(`alpha[1]`, `beta[1]`)) + geom_point(color=col.trans[2,8], alpha=.2) + facet_wrap(sampler ~ .) 
+p 
+  
+library(GGally)
+library(cowplot)
+
+
+p = plot_grid(
+  ggmatrix_gtable(ggpairs(jags)),
+  ggmatrix_gtable(ggpairs(stan)),
+  nrow = 2
+)
+```
+
+### Final notes
+A key lesson to draw from these results is that model specification matters. For instance, a non-centered specification can be of great help to Stan, and when this is the case, there is no reason not to go this route. For JAGS, it is obviously a good idea to use conjugate priors wherever possible, and thus avoid turning JAGS into Just Another Metropolis Sampler. Another point to note is that centering the predictor $x$ would have turned the scenario with high posterior correlations into one with low correlations -- we could actually have avoided the posterior correlations altogether.
+
+In addition to efficiency, there are other considerations that may be relevant for choosing between JAGS and Stan. Stan has a large development team and a very active user group, which makes it easy to solicit expert advice. Stan is also not reliant on a specific type of priors (conjugacy) and can handle a wide range of models. Furthermore, Stan is likely explore complicated posterior distributions better, and thus give more accurate results (see references below). While JAGS can be very fast for certain well-suited problems, Stan may offer the best all-round performance, especially if you are analyzing large datasets using complicated models.
+
+
+### How to cite
+<p>This material can be cited as follows:</p>
+<div class="Bib">
+<p>Bølstad, Jørgen. 2019. "How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations". <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/stan_vs_jags_speed/.</p>
+</div>
+
+Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:
+```{plaintext,eval=FALSE,highlight=FALSE}
+@Misc{boelstad:2019a,
+  Author = {B{\o}lstad, J{\o}rgen},
+  Title = {How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations},
+  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  Url = {\url{http://www.boelstad.net/post/stan_vs_jags_speed/}},
+  Year = {2019},
+  Month = {January 2}}
+```
+
+### Further reading
+<div class="Bib">
+<p>Betancourt, Michael, and Mark Girolami. 2013. "<a href="https://arxiv.org/abs/1312.0906">Hamiltonian Monte Carlo for hierarchical models</a>". arXiv:1312.0906.</p>
+<p>Betancourt, Michael. 2017. "<a href="https://arxiv.org/abs/1701.02434">A conceptual introduction to Hamiltonian Monte Carlo</a>". arXiv:1701.02434v2.</p>
+<p>Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman & Hall/CRC Press.</p>
+<p>Hoffman, Matthew D., and Andrew Gelman. 2014. "<a href="http://www.stat.columbia.edu/~gelman/research/published/nuts.pdf">The No-U-turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo</a>". <i>Journal of Machine Learning Research</i>, 15(1), pp.1593-1623.</p>
+<p>Neal, Radford M. 2011. "<a href="http://www.mcmchandbook.net/HandbookChapter5.pdf">MCMC Using Hamiltonian Dynamics</a>". In Steve Brooks, Andrew Gelman, Galin L. Jones, Xiao-Li Meng. <i>Handbook of Markov Chain Monte Carlo</i>. London: Chapman & Hall/CRC Press.</p>
+<p>Papaspiliopoulos, Omiros, Gareth O. Roberts, and Martin Sköld. 2007. "<a href="https://arxiv.org/pdf/0708.3797.pdf">A general framework for the parametrization of hierarchical models</a>". <i>Statistical Science</i>, 59-73.</p>
+
+</div>
+
+
+```{r unpooled, include = FALSE}
+### Appendix: Model codes
+stan.unpooled.code <- '
+  data {
+    int<lower=0> n;
+    int<lower=0> m;
+    vector[m] x[n];
+    vector[m] y[n];
+  }
+  parameters {
+    vector[n] alpha;
+    vector[n] beta;
+    real<lower=0> sigma;
+  } 
+  model {
+    for (i in 1:n) 
+      y[i] ~ normal(alpha[i] + beta[i] * x[i], sigma);
+  }
+'
+
+jags.unpooled.code <- function() {
+  for (i in 1:n) {
+    for (j in 1:m) {
+      y[i, j] ~ dnorm(alpha[i] + beta[i] * x[i, j], tau)
+    }
+  alpha[i] ~ dunif(-100, 100)
+  beta[i] ~ dunif(-100, 100)
+  }
+  tau <- pow(sigma, -2)
+  sigma ~ dunif(0, 100)
+}
+```
+
+```{r hierarchical, include = FALSE}
+stan.nonconjugate.code <- '
+  data {
+    int<lower=0> n;
+    int<lower=0> m;
+    vector[m] x[n];
+    vector[m] y[n];
+  }
+  parameters {
+    vector[n] alpha;
+    vector[n] beta;
+    real mu_alpha;
+    real mu_beta;
+    real<lower=0> sigma_alpha;
+    real<lower=0> sigma_beta;
+    real<lower=0> sigma;
+  } 
+  model {
+    for (i in 1:n) 
+      y[i] ~ normal(alpha[i] + beta[i] * x[i], sigma);
+    alpha ~ student_t(100, mu_alpha, sigma_alpha);
+    beta ~ student_t(100, mu_beta, sigma_beta);  
+    mu_alpha ~ student_t(100, 0, 3);
+    mu_beta ~ student_t(100, 0, 3);
+    sigma_alpha ~ gamma(2, .5);
+    sigma_beta ~ gamma(2, .5);
+    sigma ~ gamma(2, .5);
+  }
+'
+
+jags.nonconjugate.code <- function() {
+  for (i in 1:n) {
+    for (j in 1:m) {
+      y[i, j] ~ dnorm(alpha[i] + beta[i] * x[i, j], tau)
+    }
+  alpha[i] ~ dt(mu_alpha, tau_alpha, 100)
+  beta[i] ~ dt(mu_beta, tau_beta, 100)
+  }
+  mu_alpha ~ dt(0, pow(3, -2),100)
+  mu_beta ~ dt(0, pow(3, -2),100)
+  tau_alpha <- pow(sigma_alpha, -2)
+  sigma_alpha ~ dgamma(2, .5)
+  tau_beta <- pow(sigma_beta, -2)
+  sigma_beta ~ dgamma(2, .5)
+  tau <- pow(sigma, -2)
+  sigma ~ dgamma(2, .5)
+}
+```
+
+```{r, include = FALSE}
+stan.partconjugate.code <- '
+  data {
+    int<lower=0> n;
+    int<lower=0> m;
+    vector[m] x[n];
+    vector[m] y[n];
+  }
+  parameters {
+    vector[n] alpha;
+    vector[n] beta;
+    real mu_alpha;
+    real mu_beta;
+    real<lower=0> sigma_alpha;
+    real<lower=0> sigma_beta;
+    real<lower=0> sigma;
+  } 
+  model {
+    for (i in 1:n) 
+      y[i] ~ normal(alpha[i] + beta[i] * x[i], sigma);
+    alpha ~ normal(mu_alpha, sigma_alpha);
+    beta ~ normal(mu_beta, sigma_beta);
+    mu_alpha ~ normal(0, 3);
+    mu_beta ~ normal(0, 3);
+    sigma_alpha ~ gamma(2, .5);
+    sigma_beta ~ gamma(2, .5);
+    sigma ~ gamma(2, .5);
+  }
+'
+
+jags.partconjugate.code <- function() {
+  for (i in 1:n) {
+    for (j in 1:m) {
+      y[i, j] ~ dnorm(alpha[i] + beta[i] * x[i, j], tau)
+    }
+  alpha[i] ~ dnorm(mu_alpha, tau_alpha)
+  beta[i] ~ dnorm(mu_beta, tau_beta)
+  }
+  mu_alpha ~ dnorm(0, pow(3, -2))
+  mu_beta ~ dnorm(0, pow(3, -2))
+  tau_alpha <- pow(sigma_alpha, -2)
+  sigma_alpha ~ dgamma(2, .5)
+  tau_beta <- pow(sigma_beta, -2)
+  sigma_beta ~ dgamma(2, .5)
+  tau <- pow(sigma, -2)
+  sigma ~ dgamma(2, .5)
+}
+```
+
+```{r, include = FALSE}
+stan.noncentered.code <- '
+  data {
+    int<lower=0> n;
+    int<lower=0> m;
+    vector[m] x[n];
+    vector[m] y[n];
+  }
+  parameters {
+    vector[n] alpha_raw;
+    vector[n] beta_raw;
+    real mu_alpha;
+    real mu_beta;
+    real<lower=0> sigma_alpha;
+    real<lower=0> sigma_beta;
+    real<lower=0> sigma;
+  } 
+  transformed parameters {
+    vector[n] alpha = mu_alpha + sigma_alpha * alpha_raw;
+    vector[n] beta = mu_beta + sigma_beta * beta_raw;
+  }
+  model {
+    for (i in 1:n) 
+      y[i] ~ normal(alpha[i] + beta[i] * x[i], sigma);
+    alpha_raw ~ normal(0, 1);
+    beta_raw ~ normal(0, 1);
+    mu_alpha ~ normal(0, 3);
+    mu_beta ~ normal(0, 3);
+    sigma_alpha ~ gamma(2, .5);
+    sigma_beta ~ gamma(2, .5);
+    sigma ~ gamma(2, .5);
+  }
+'
+
+jags.noncentered.code <- function() {
+  for (i in 1:n) {
+    for (j in 1:m) {
+      y[i, j] ~ dnorm(alpha[i] + beta[i] * x[i, j], tau)
+    }
+  alpha[i] = mu_alpha + sigma_alpha * alpha_raw[i]
+  beta[i] = mu_beta + sigma_beta * beta_raw[i]
+  alpha_raw[i] ~ dnorm(0, 1)
+  beta_raw[i] ~ dnorm(0, 1)
+  }
+  mu_alpha ~ dnorm(0, pow(3, -2))
+  mu_beta ~ dnorm(0, pow(3, -2))
+  sigma_alpha ~ dgamma(2, .5)
+  sigma_beta ~ dgamma(2, .5)
+  tau <- pow(sigma, -2)
+  sigma ~ dgamma(2, .5)
+}
+```
+
+```{r conjugate, include = FALSE}
+stan.conjugate.code <- '
+  data {
+    int<lower=0> n;
+    int<lower=0> m;
+    vector[m] x[n];
+    vector[m] y[n];
+  }
+  parameters {
+    vector[n] alpha;
+    vector[n] beta;
+    real mu_alpha;
+    real mu_beta;
+    real<lower=0> sigma_alpha_sq;
+    real<lower=0> sigma_beta_sq;
+    real<lower=0> sigma_sq;
+  } 
+  
+  transformed parameters {
+    real sigma_alpha = sqrt(sigma_alpha_sq);
+    real sigma_beta = sqrt(sigma_beta_sq);
+    real sigma = sqrt(sigma_sq);
+  }
+  
+  model {
+    for (i in 1:n) 
+      y[i] ~ normal(alpha[i] + beta[i] * x[i], sigma);
+    alpha ~ normal(mu_alpha, sigma_alpha);
+    beta ~ normal(mu_beta, sigma_beta);
+    mu_alpha ~ normal(0, 3);
+    mu_beta ~ normal(0, 3);
+    sigma_alpha_sq ~ inv_gamma(1.5, 2);
+    sigma_beta_sq ~ inv_gamma(1.5, 2);
+    sigma_sq ~ inv_gamma(1.5, 2);
+  }
+'
+
+jags.conjugate.code <- function() {
+  for (i in 1:n) {
+    for (j in 1:m) {
+      y[i, j] ~ dnorm(alpha[i] + beta[i] * x[i, j], tau)
+    }
+  alpha[i] ~ dnorm(mu_alpha, tau_alpha)
+  beta[i] ~ dnorm(mu_beta, tau_beta)
+  }
+  mu_alpha ~ dnorm(0, pow(3, -2))
+  mu_beta ~ dnorm(0, pow(3, -2))
+  tau_alpha ~ dgamma(1.5, .5) 
+  tau_beta ~ dgamma(1.5, .5)
+  tau ~ dgamma(1.5, .5)
+}
+```
+
+```{r, include = FALSE}
+stan.conj.noncentered.code <- '
+  data {
+    int<lower=0> n;
+    int<lower=0> m;
+    vector[m] x[n];
+    vector[m] y[n];
+  }
+  parameters {
+    vector[n] alpha_raw;
+    vector[n] beta_raw;
+    real mu_alpha;
+    real mu_beta;
+    real<lower=0> sigma_alpha_sq;
+    real<lower=0> sigma_beta_sq;
+    real<lower=0> sigma_sq;
+  } 
+  transformed parameters {
+    real sigma_alpha = sqrt(sigma_alpha_sq);
+    real sigma_beta = sqrt(sigma_beta_sq);
+    real sigma = sqrt(sigma_sq);
+    vector[n] alpha = mu_alpha + sigma_alpha * alpha_raw;
+    vector[n] beta = mu_beta + sigma_beta * beta_raw;
+  }
+  model {
+    for (i in 1:n) 
+      y[i] ~ normal(alpha[i] + beta[i] * x[i], sigma);
+    alpha_raw ~ normal(0, 1);
+    beta_raw ~ normal(0, 1);
+    mu_alpha ~ normal(0, 3);
+    mu_beta ~ normal(0, 3);
+    sigma_alpha_sq ~ inv_gamma(1.5, 2);
+    sigma_beta_sq ~ inv_gamma(1.5, 2);
+    sigma_sq ~ inv_gamma(1.5, 2);
+  }
+'
+
+jags.conj.noncentered.code <- function() {
+  for (i in 1:n) {
+    for (j in 1:m) {
+      y[i, j] ~ dnorm(mu_alpha + alpha[i] + (mu_beta + beta[i]) * x[i, j], tau)
+    }
+  alpha[i] ~ dnorm(0, tau_alpha)
+  beta[i] ~ dnorm(0, tau_beta)
+  }
+  mu_alpha ~ dnorm(0, pow(3, -2))
+  mu_beta ~ dnorm(0, pow(3, -2))
+  tau_alpha ~ dgamma(1.5, .5) 
+  tau_beta ~ dgamma(1.5, .5)
+  tau ~ dgamma(1.5, .5)
+}
+```
+
+
+```{r compilestan,  eval=FALSE, cache=TRUE, results='hide', include = FALSE}
+### Appendix: Code to fit the models
+stan.unpooled <- stan_model(model_code = stan.unpooled.code)
+stan.nonconjugate <- stan_model(model_code = stan.nonconjugate.code)
+stan.partconjugate <- stan_model(model_code = stan.partconjugate.code)
+stan.noncentered <- stan_model(model_code = stan.noncentered.code)
+stan.conjugate <- stan_model(model_code = stan.conjugate.code)
+stan.conj.noncentered <- stan_model(model_code = stan.conj.noncentered.code)
+```
+
+```{r fit, eval=FALSE, cache=T, include = FALSE} 
+source("https://avehtari.github.io/rhat_reff/monitornew.R") ## File with updated (BDA3) code for split Rhat and N_eff.
+get.stats <- function(sims, time) {
+  eff.draws <- apply(sims, 3, ess_rfun)
+  min.eff.draws <- min(eff.draws)
+  mean.eff.draws <- mean(eff.draws)
+  rhat <- max(apply(sims, 3, function(x) rhat_rfun(split_chains(x))))
+  res <- c(rhat, time, mean.eff.draws, min.eff.draws, time / min.eff.draws)
+  return(res)
+}
+
+stan.mods <- list(stan.unpooled, stan.nonconjugate, stan.partconjugate, 
+                  stan.noncentered, stan.conjugate, stan.conj.noncentered)
+jags.mods <- list(jags.unpooled.code, jags.nonconjugate.code, jags.partconjugate.code, 
+                  jags.noncentered.code, jags.conjugate.code, jags.conj.noncentered.code)
+jags.pars <- list(c('alpha', 'beta', 'sigma'), 
+                  c('alpha', 'beta', 'sigma', 'mu_alpha', 'mu_beta', 'sigma_alpha', 'sigma_beta'), 
+                  c('alpha', 'beta', 'sigma', 'mu_alpha', 'mu_beta', 'sigma_alpha', 'sigma_beta'), 
+                  c('alpha', 'beta', 'sigma', 'mu_alpha', 'mu_beta', 'sigma_alpha', 'sigma_beta'), 
+                  c('alpha', 'beta', 'tau', 'mu_alpha', 'mu_beta', 'tau_alpha', 'tau_beta'), 
+                  c('alpha', 'beta', 'tau', 'mu_alpha', 'mu_beta', 'tau_alpha', 'tau_beta'))
+jags.warmup <- rbind(c(rep(3000, 6)), c(20000, 7000, 3000, 3000, 3000, 3000))
+stan.warmup <- rbind(c(rep(1000, 6)), c(1000, 2000, 1000, 1000, 1000, 1000))
+
+ns = c(250)
+ms = c(5)
+xmeans <- c(0, 2)
+n.trials <- 100
+n.cores <- 3
+
+results <- vector()
+for (t in 1:n.trials) {
+for(xm in 1:length(xmeans)) {
+  for (n in ns) {
+    for (m in ms) {
+        dat <- create.data(n, m, covar=0, xmean=xmeans[xm])
+        for (md in 1:length(jags.mods)) {
+          ptm <- proc.time()
+          cl <- makePSOCKcluster(n.cores)
+          tmp <- clusterEvalQ(cl, library(dclone))
+          fit1 <- jags.parfit(cl = cl, data = dat, params = jags.pars[[md]], 
+                    model = jags.mods[[md]], n.chains = n.cores, 
+                    n.adapt = 100, n.update = jags.warmup[xm,md], n.iter = 4000, thin = 2)
+          stopCluster(cl)
+          time <- proc.time() - ptm
+          sims <- aperm(as.array(fit1), c(1, 3, 2))
+          res <- cbind(n, m, xmeans[xm], t, 1, md, rbind(get.stats(sims, time[3])))
+          results <- rbind(results, res)
+        }
+        for (md in 1:length(stan.mods)) {
+          ptm <- proc.time()
+          fit2 <- sampling(stan.mods[[md]], data = dat, chains = n.cores, cores = n.cores, 
+                    warmup = stan.warmup[xm,md], iter = stan.warmup[xm, md] + 2000)
+          time <- proc.time() - ptm
+          res <- cbind(n, m, xmeans[xm], t, 2, md, rbind(get.stats(extract(fit2, permuted = F), time[3]))) 
+          results <- rbind(results, res)
+        }
+      }
+    }
+  }
+  print(paste("Finished trial ", t, " of ", n.trials,  ", at ", date(), sep=""))   
+}
+
+results <- data.frame(results)
+names(results)[5] <- 'sampler'
+names(results)[3] <- 'xm'
+names(results)[7:11] <- c('rhat', 'time', 'mean.size', 'min.size', 'time.per.draw')
+results[, 5] <- factor(2 - results[, 5], labels = c('Stan', 'JAGS'))
+results[, 6] <- factor(results[, 6], labels = c('Unpooled, uniform priors', 'Hierarchical, weakly informative, non-conjugate, centered', 'Hierarchical, weakly informative, partly conjugate, centered', 'Hierarchical, weakly inf., partly conjugate, non-centered', 'Hierarchical, weakly informative, fully conjugate, centered', 'Hierarchical, weakly informative, fully conjugate, non-centered'))
+results$n <- factor(results$n)
+levels(results$n) <- paste("n = ", levels(results$n), sep="")
+results$xm <- factor(results$xm)
+levels(results$xm) <- c("Low posterior\n parameter correlations", "High posterior\n parameter correlations")
+```
+
+```{r, eval=F, include=F}
+stan.mods <- list(stan.unpooled)
+jags.mods <- list(jags.unpooled.code)
+jags.pars <- list(c('alpha', 'beta', 'sigma'))
+jags.warmup <- rbind(c(rep(3000, 6)), c(20000, 7000, 3000, 3000, 3000, 3000))
+stan.warmup <- rbind(c(rep(1000, 6)), c(1000, 2000, 1000, 1000, 1000, 1000))
+
+ns = c(250)
+ms = c(5)
+xmeans <- c(0, 2)
+n.cores = 2
+md = 1
+xm = 2
+n = 250
+m = 5
+
+set.seed(123)
+dat <- create.data(250, 5, covar=0, xmean = xmeans[xm])
+
+results1 <- vector()
+cl <- makePSOCKcluster(n.cores)
+tmp <- clusterEvalQ(cl, library(dclone))
+fit1 <- jags.parfit(cl = cl, data = dat, params = jags.pars[[md]], 
+          model = jags.mods[[md]], n.chains = n.cores, 
+          n.adapt = 100, n.update = jags.warmup[xm,md], n.iter = 4000, thin = 2)
+stopCluster(cl)
+sims <- aperm(as.array(fit1),c(1,3,2))
+res <- cbind(n,m,xmeans[xm],t,1,md,rbind(get.stats(sims,10)))
+results1 <- rbind(results1,res)
+
+fit2 <- sampling(stan.mods[[md]], data=dat, chains=n.cores, cores=n.cores, 
+          warmup=stan.warmup[xm,md], iter=stan.warmup[xm,md]+2000)
+res <- cbind(n,m,xmeans[xm],t,2,md,rbind(get.stats(extract(fit2,permuted=F),10))) 
+results1 <- rbind(results1,res)
+
+jags <- sims[,,c(1,251)]
+stan <- extract(fit2,permuted=F,pars=c("alpha[1]","beta[1]"))
+save(jags,stan,file="../../knit-data/stan-vs-jags-speed-parameter-draws.RData")
+```
+
+
