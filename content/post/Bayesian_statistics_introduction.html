@@ -38,7 +38,7 @@ prior &lt;- density * res      # Multiply with resolution to get probability per
 </div>
 <div id="the-likelihood" class="section level3">
 <h3>The likelihood</h3>
-<p>Next, we need to define the likelihood function, which gives the probability of observing our data for given a parameter value: <span class="math inline">\(p(y|\mu)\)</span>. To keep things simple, let us say we know that the procedure generating our measurements entails normally distributed errors with a standard deviation of 2. For a single observation, <span class="math inline">\(y_i\)</span>, the likelihood is then: <span class="math inline">\(p(y_i|\mu) = N(y_i|\mu,2^2)\)</span>. The likelihood for the whole dataset is the product of all the individual likelihoods: <span class="math display">\[p(y|\mu) = \prod^n_{i=1} N(y_i|\mu,2^2)\]</span></p>
+<p>Next, we need to define the likelihood function, which gives the probability of observing our data for a given parameter value: <span class="math inline">\(p(y|\mu)\)</span>. To keep things simple, let us say we know that the procedure generating our measurements entails normally distributed errors with a standard deviation of 2. For a single observation, <span class="math inline">\(y_i\)</span>, the likelihood is then: <span class="math inline">\(p(y_i|\mu) = N(y_i|\mu,2^2)\)</span>. The likelihood for the whole dataset is the product of all the individual likelihoods: <span class="math display">\[p(y|\mu) = \prod^n_{i=1} N(y_i|\mu,2^2)\]</span></p>
 
 <p>Having specified the likelihood function, we can calculate the likelihood across the set of potential values for <span class="math inline">\(\mu\)</span>. An intuitive way to do this is to use loops:</p>
 <pre class="r"><code>likelihood &lt;- vector()      # Create an empty vector
@@ -143,7 +143,7 @@ This material can be cited as follows:
 Bølstad, Jørgen. 2018. “The Basics of Bayesian Inference: Evaluating Continuous Distributions over a Grid in R”. <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/bayesian_statistics_introduction/.
 </p>
 </div>
-<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:</p>
+<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:</p>
 <pre class="text"><code>@Misc{boelstad:2018a,
   Author = {B{\o}lstad, J{\o}rgen},
   Title = {The Basics of Bayesian Inference: Evaluating Continuous Distributions over a Grid in R},

@@ -71,7 +71,7 @@ draws &lt;- metropolis(y, n.it, proposal.sd = 1, starting.values = starting.valu
 </div>
 <div id="what-could-go-wrong" class="section level3">
 <h3>What could go wrong?</h3>
-<p>Let us consider some potential issues that could arise. First, it should be noted that it is always a good idea to run the sampler more than once, as it helps diagnosing potential problems. Here, we will run the sampler twice, which gives us two sequences of draws for each parameter. Normally one would want to run one chain on each processor core, but we will keep it simple and one run after the other.</p>
+<p>Let us consider some potential issues that could arise. First, it should be noted that it is always a good idea to run the sampler more than once, as it helps to diagnose potential problems. Here, we will run the sampler twice, which gives us two sequences of draws for each parameter. Normally one would want to run one chain on each processor core, but we will keep it simple and run them one after the other.</p>
 <div id="too-large-step-size" class="section level4">
 <h4>Too large step size</h4>
 <p>For the sake of illustration, let us run the sampler with a much larger step size, increasing the standard deviation of the proposal distribution to 20:</p>
@@ -88,7 +88,7 @@ draws.2 &lt;- data.frame(1:n.it, chain1, chain2)</code></pre>
 </div>
 <div id="too-small-step-size" class="section level4">
 <h4>Too small step size</h4>
-<p>When the situation above occurs, a natural response is to make the proposal distribution narrower. Let us see what happens if we go a bit far and reduce the standard deviation of the innovations to 1/100:</p>
+<p>When the situation above occurs, a natural response is to make the proposal distribution narrower. Let us see what happens if we go a bit too far and reduce the standard deviation of the innovations to 1/100:</p>
 <pre class="r"><code>n.it = 2500
 chain1 &lt;- metropolis(y, n.it, proposal.sd = .01, 
                      starting.values = c(rnorm(1, -1, 1.5), runif(1, 0, 10)))
@@ -103,7 +103,7 @@ draws.3 &lt;- data.frame(1:n.it, chain1, chain2)</code></pre>
 </div>
 <div id="final-notes" class="section level3">
 <h3>Final notes</h3>
-<p>In this example, it easy to set a step size that makes the Metropolis algorithm work well. In more complicated settings, with a large number of potentially correlated parameters, the algorithm may be less well suited, and more advanced samplers (e.g. Hamiltonian MC/NUTS) may be preferable. It should also be noted that there are also several topics I have left aside here. The present example is so limited that we could keep things simple and not work with log probabilities. In my <a href="http://www.boelstad.net/post/bayesian_hierarchical_modeling/">next post</a>, I expand the sampler to analyze a hierarchical dataset, which requires using logs to avoid computational underflows. Other issues I have left aside include the calculation of convergence statistics and effective simulation draws, as well as the fact that these algorithms typically require a warm-up period – with appropriate step size, there is hardly need for one in this example.</p>
+<p>In this example, it is easy to set a step size that makes the Metropolis algorithm work well. In more complicated settings, with a large number of potentially correlated parameters, the algorithm may be less well suited, and more advanced samplers (e.g. Hamiltonian MC/NUTS) may be preferable. It should also be noted that there are also several topics I have left aside here. The present example is so limited that we could keep things simple and not work with log probabilities. In my <a href="http://www.boelstad.net/post/bayesian_hierarchical_modeling/">next post</a>, I expand the sampler to analyze a hierarchical dataset, which requires using logs to avoid computational underflows. Other issues I have left aside include the calculation of convergence statistics and effective simulation draws, as well as the fact that these algorithms typically require a warm-up period – with appropriate step size, there is hardly need for one in this example.</p>
 
 </div>
 <div id="how-to-cite" class="section level3">
@@ -116,7 +116,7 @@ This material can be cited as follows:
 Bølstad, Jørgen. 2018. “An Introduction to Markov Chain Monte Carlo Sampling: Writing and Diagnosing a Metropolis Sampler in R”. <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/mcmc_sampling_introduction/.
 </p>
 </div>
-<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:</p>
+<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:</p>
 <pre class="text"><code>@Misc{boelstad:2018b,
   Author = {B{\o}lstad, J{\o}rgen},
   Title = {An Introduction to Markov Chain Monte Carlo Sampling: Writing and Diagnosing a Metropolis Sampler in R},

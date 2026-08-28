@@ -65,7 +65,7 @@ prior[1:5]                  # Inspect the corresponding values of the prior
 ```
 
 ### The likelihood
-Next, we need to define the likelihood function, which gives the probability of observing our data for given a parameter value: $p(y|\mu)$. To keep things simple, let us say we know that the procedure generating our measurements entails normally distributed errors with a standard deviation of 2. For a single observation, $y_i$, the likelihood is then: $p(y_i|\mu) = N(y_i|\mu,2^2)$. The likelihood for the whole dataset is the product of all the individual likelihoods: 
+Next, we need to define the likelihood function, which gives the probability of observing our data for a given parameter value: $p(y|\mu)$. To keep things simple, let us say we know that the procedure generating our measurements entails normally distributed errors with a standard deviation of 2. For a single observation, $y_i$, the likelihood is then: $p(y_i|\mu) = N(y_i|\mu,2^2)$. The likelihood for the whole dataset is the product of all the individual likelihoods: 
 $$p(y|\mu) = \prod^n_{i=1} N(y_i|\mu,2^2)$$
 
 
@@ -264,7 +264,7 @@ The approach used here (calculating joint probability distributions over a grid)
 <p>Bølstad, Jørgen. 2018. "The Basics of Bayesian Inference: Evaluating Continuous Distributions over a Grid in R". <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/bayesian_statistics_introduction/.</p>
 </div>
 
-Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:
+Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:
 ```{plaintext,eval=FALSE,highlight=FALSE}
 @Misc{boelstad:2018a,
   Author = {B{\o}lstad, J{\o}rgen},

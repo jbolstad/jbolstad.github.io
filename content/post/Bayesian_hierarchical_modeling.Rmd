@@ -23,7 +23,7 @@ load("../../knit-data/bayesian-hierarchical-modeling.RData")
 n.it <- 10000
 ```
 
-I used to think so-called multilevel models were a little boring. I was interested in causal inference, and the people using these models did not seem to have better causal identification strategies than those running plain old regressions. I have gradually come to change my mind on these models, although it is not because I think they solve challenges of causal identification. It is rather because I think a large share of our data can be thought of as hierarchical, and that proper modeling help us make the most of such data.
+I used to think so-called multilevel models were a little boring. I was interested in causal inference, and the people using these models did not seem to have better causal identification strategies than those running plain old regressions. I have gradually come to change my mind on these models, although it is not because I think they solve challenges of causal identification. It is rather because I think a large share of our data can be thought of as hierarchical, and that proper modeling helps us make the most of such data.
 
 This post illustrates the benefits of Bayesian hierarchical modeling, by expanding the Metropolis sampler from my previous post to deal with more parameters. I will refer to hierarchical rather than multilevel models, as this highlights the use of hierarchical priors. The key advantage of the hierarchical approach is that it uses information across groups of observations to reduce our lower-level parameters' sensitivity to noise. To demonstrate how this improves our estimates, this post compares a hierarchical model to a so-called unpooled model. (If you are unfamiliar with the basics of Bayesian inference, my <a href="http://www.boelstad.net/post/bayesian_statistics_introduction/">earlier posts</a> may be a better start.)
 
@@ -35,7 +35,7 @@ Here, we will create a small hierarchical dataset, containing 5 noisy observatio
 ```{r data}
 set.seed(1)
 n = 75 # Number of individuals
-m = 5  # Number of observations for per individual
+m = 5  # Number of observations per individual
 alpha <- rnorm(n, 2, 1) # True individual-specific intercepts
 beta <- rnorm(n, -2, 1) # True individual-specific coefficients
 x <- matrix(rnorm(n * m, 0, 1), ncol = m)
@@ -72,7 +72,7 @@ log.likelihood <- function(y, x, pars) {
 The key question is how we model the $\alpha$- and $\beta$-parameters. A simple option is to do *complete pooling*, assuming the $\alpha$'s and $\beta$'s are equal for all individuals, and estimating a single $\alpha$ and a single $\beta$. This is similar to running a single regression on the whole dataset, which is not particularly interesting, so we will leave this option aside here. 
 
 #### No pooling
-At the other extreme, we can give each individual their own $\alpha$- and $\beta$-parameter and place wide, flat priors on each: $\alpha_i \sim U(-100,100)$, and $\beta_i \sim U(-100,100)$. Models of this kind are often referred to as *no pooling* models, and in our case, this is similar to running a separate regression for each individual. If also add a flat prior on the variance, we get the following prior distribution:
+At the other extreme, we can give each individual their own $\alpha$- and $\beta$-parameter and place wide, flat priors on each: $\alpha_i \sim U(-100,100)$, and $\beta_i \sim U(-100,100)$. Models of this kind are often referred to as *no pooling* models, and in our case, this is similar to running a separate regression for each individual. If we also add a flat prior on the variance, we get the following prior distribution:
 
 
 $$\begin{aligned}p(\alpha,\beta,\sigma) = &\prod^n_{i=1}\big[U(\alpha_i|-100,100) \times U(\beta_i|-100,100)\big] \times U(\sigma|0,10)\end{aligned}$$
@@ -91,7 +91,7 @@ log.prior.1 <- function(pars) {
 
 #### Partial pooling
 
-Between the extremes of complete pooling and no pooling, we have the option of *partial pooling*, which is typically what is meant by hierarachical modeling. Here, we start from the assumption that the parameters come from a common population distribution -- which is typically self-evident. While we could specify a certain prior representing our beliefs regarding population distribution, there is a better option. If we choose a parametric density function -- assuming, for instance, that the population follows a normal distribution -- then we can let the parameters of that distribution be estimated from the data. Instead of fixing those *hyperparameters*, we give them their own, higher-level priors -- *hyperpriors*. An interesting point about the hyperparameters is that they do not change the likelihood function -- they only influence the posterior through the prior on the lower-level parameters. 
+Between the extremes of complete pooling and no pooling, we have the option of *partial pooling*, which is typically what is meant by hierarchical modeling. Here, we start from the assumption that the parameters come from a common population distribution -- which is typically self-evident. While we could specify a certain prior representing our beliefs regarding the population distribution, there is a better option. If we choose a parametric density function -- assuming, for instance, that the population follows a normal distribution -- then we can let the parameters of that distribution be estimated from the data. Instead of fixing those *hyperparameters*, we give them their own, higher-level priors -- *hyperpriors*. An interesting point about the hyperparameters is that they do not change the likelihood function -- they only influence the posterior through the prior on the lower-level parameters. 
 
 In our case, we will assume the $\alpha$'s and $\beta$'s come from two distinct normal distributions: $\alpha_i \sim N(\mu_\alpha,\sigma_\alpha^2)$, and: $\beta_i \sim N(\mu_\beta,\sigma_\beta^2)$. We further add hyperpriors on the population parameters: $\mu_\alpha, \mu_\beta \sim N(0,3^2)$, and: $\sigma_\alpha, \sigma_\beta \sim U(0,10)$. For the variance, we use the same flat prior as above: $\sigma \sim U(0,10)$. Our joint prior distribution is then:
 
@@ -287,7 +287,7 @@ In this post, I have left aside the issues of MCMC convergence and how to sample
 <p>Bølstad, Jørgen. 2019. "The Benefits of Bayesian Hierarchical Modeling: Comparing Partially Pooled and Unpooled Models in R". <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/bayesian_hierarchical_modeling/.</p>
 </div>
 
-Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable Latex style:
+Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:
 ```{plaintext,eval=FALSE,highlight=FALSE}
 @Misc{boelstad:2018c,
   Author = {B{\o}lstad, J{\o}rgen},
