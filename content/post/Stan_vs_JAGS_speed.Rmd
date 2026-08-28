@@ -185,9 +185,11 @@ Here is a BibTex-formatted reference, which should work when using the natbib an
 <div class="Bib">
 <p>Betancourt, Michael, and Mark Girolami. 2013. "<a href="https://arxiv.org/abs/1312.0906">Hamiltonian Monte Carlo for hierarchical models</a>". arXiv:1312.0906.</p>
 <p>Betancourt, Michael. 2017. "<a href="https://arxiv.org/abs/1701.02434">A conceptual introduction to Hamiltonian Monte Carlo</a>". arXiv:1701.02434v2.</p>
+<p>Carpenter, Bob, Andrew Gelman, Matthew D. Hoffman, Daniel Lee, Ben Goodrich, Michael Betancourt, Marcus Brubaker, Jiqiang Guo, Peter Li and Allen Riddell. 2017. "<a href="https://www.jstatsoft.org/index.php/jss/article/view/v076i01">Stan: A Probabilistic Programming Language</a>". <i>Journal of Statistical Software</i>, 76(1), pp.1-32.</p>
 <p>Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman & Hall/CRC Press.</p>
 <p>Hoffman, Matthew D., and Andrew Gelman. 2014. "<a href="http://www.stat.columbia.edu/~gelman/research/published/nuts.pdf">The No-U-turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo</a>". <i>Journal of Machine Learning Research</i>, 15(1), pp.1593-1623.</p>
 <p>Neal, Radford M. 2011. "<a href="http://www.mcmchandbook.net/HandbookChapter5.pdf">MCMC Using Hamiltonian Dynamics</a>". In Steve Brooks, Andrew Gelman, Galin L. Jones, Xiao-Li Meng. <i>Handbook of Markov Chain Monte Carlo</i>. London: Chapman & Hall/CRC Press.</p>
+<p>Plummer, Martyn. 2003. "<a href="https://www.ci.tuwien.ac.at/Conferences/DSC-2003/Proceedings/Plummer.pdf">JAGS: A Program for Analysis of Bayesian Graphical Models Using Gibbs Sampling</a>". In Proceedings of the 3rd International Workshop on Distributed Statistical Computing, Vienna.</p>
 <p>Papaspiliopoulos, Omiros, Gareth O. Roberts, and Martin Sköld. 2007. "<a href="https://arxiv.org/pdf/0708.3797.pdf">A general framework for the parametrization of hierarchical models</a>". <i>Statistical Science</i>, 59-73.</p>
 
 </div>
