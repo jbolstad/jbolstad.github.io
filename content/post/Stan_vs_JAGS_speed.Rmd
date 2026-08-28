@@ -152,23 +152,10 @@ stan <- stan[sample(size=1000,1:nrow(stan),replace=F),]
 
 plotdat <- data.frame(rbind(stan,jags),rbind(cbind(rep("Stan",nrow(stan))),cbind(rep("JAGS",nrow(jags)))))
 names(plotdat) <- c("alpha[1]","beta[1]","sampler")
-jags <- data.frame(jags)
-stan <- data.frame(stan)
-names(jags) <- c("alpha[1]","beta[1]")
-names(stan) <- c("alpha[1]","beta[1]")
 
-p <- ggplot(plotdat, aes(`alpha[1]`, `beta[1]`)) + geom_point(color=col.trans[2,8], alpha=.2) + facet_wrap(sampler ~ .) 
-p 
-  
-library(GGally)
-library(cowplot)
-
-
-p = plot_grid(
-  ggmatrix_gtable(ggpairs(jags)),
-  ggmatrix_gtable(ggpairs(stan)),
-  nrow = 2
-)
+ggplot(plotdat, aes(`alpha[1]`, `beta[1]`)) +
+  geom_point(color = col.trans[2, 8], alpha = .2) +
+  facet_wrap(sampler ~ .)
 ```
 
 ### Final notes
