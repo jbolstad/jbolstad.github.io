@@ -19,8 +19,6 @@ ignoreFiles = ["\\.psd$", "\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
 [security]
   allowContent = ["text/html", "text/markdown"]
 [services]
-  [services.disqus]
-    shortname = "boelstad-net"
   [services.rss]
     limit = 3
 
@@ -32,7 +30,7 @@ ignoreFiles = ["\\.psd$", "\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
   dateFormat = "January 2, 2006"
   commit = false
   rss = false
-  comments = true
+  comments = false
   readingTime = true
   #useHLJS = true
   socialShare = true
