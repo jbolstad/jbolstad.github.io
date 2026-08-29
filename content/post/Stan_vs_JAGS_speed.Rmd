@@ -26,7 +26,7 @@ The approach taken here is to compare the models in terms of seconds required to
 
 This mini-study generates hierarchical datasets, containing $m$ noisy observations for each of $n$ individuals. For a given individual $i \in \{1, \ldots, n\}$ and trial number $j \in \{1, \ldots, m\}$, we have the observed outcome $y_{ij}$. In addition to $y$, the data contain the covariate $x$, which also varies by $i$ and $j$. The outcome $y$ will have normally distributed, homoskedastic errors, and depend linearly on $x$, according to the following process: $y_{ij} \sim N(\alpha_i + \beta_i x_{ij},\sigma^2)$. Each individual will have its own true intercept, $\alpha_i$, as well as its own coefficient on $x$, $\beta_i$. These individual-specific parameters are in turn drawn from their own distributions: $\alpha \sim N(2,1)$, and $\beta \sim N(-2,1)$. The code to define the data-generating process (and load necessary packages) is:
 
-```{r data, message=FALSE}
+```{r data, message=FALSE, eval=FALSE}
 library(rstan)
 library(rjags)
 library(MASS)   # To sample from multivariate normal
@@ -127,7 +127,7 @@ results$xm <- factor(results$xm)
 levels(results$xm) <- c("Weak posterior\n correlations","Strong posterior\n correlations")
 
 p <- ggplot(results[results$rhat<1.2,], aes(as.factor(md), time.per.draw, fill=sampler, color=sampler)) + 
-    guides(fill = FALSE,colour = guide_legend(title=NULL,reverse = TRUE,override.aes = list(color=col.solid[2:1,8],   fill=col.trans[2:1,5]  ))) +
+    guides(fill = "none", colour = guide_legend(title=NULL, reverse = TRUE, override.aes = list(color=col.solid[2:1,8], fill=col.trans[2:1,5]))) +
     geom_boxplot(position=position_dodge(.75),width=.6,
   outlier.alpha=.3,outlier.size=.5) + coord_flip() + facet_grid(xm ~ .) +
     labs(x="",y="Seconds per effective draw") + scale_y_continuous(trans='log10') + 
@@ -486,7 +486,7 @@ jags.conj.noncentered.code <- function() {
 ```
 
 
-```{r compilestan,  eval=FALSE, cache=TRUE, results='hide', include = FALSE}
+```{r compilestan, eval=FALSE, include=FALSE, results='hide'}
 ### Appendix: Code to fit the models
 stan.unpooled <- stan_model(model_code = stan.unpooled.code)
 stan.nonconjugate <- stan_model(model_code = stan.nonconjugate.code)
@@ -496,7 +496,7 @@ stan.conjugate <- stan_model(model_code = stan.conjugate.code)
 stan.conj.noncentered <- stan_model(model_code = stan.conj.noncentered.code)
 ```
 
-```{r fit, eval=FALSE, cache=T, include = FALSE} 
+```{r fit, eval=FALSE, include=FALSE}
 source("https://avehtari.github.io/rhat_reff/monitornew.R") ## File with updated (BDA3) code for split Rhat and N_eff.
 get.stats <- function(sims, time) {
   eff.draws <- apply(sims, 3, ess_rfun)
