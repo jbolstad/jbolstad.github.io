@@ -45,7 +45,7 @@ create.data <- function(n = 500, m = 5, covar = 0, xmean = 0) {
 
 #### Posterior parameter correlations
 
-A key issue for MCMC samplers is how strong posterior correlations there are between the parameters, which in turn depends on both the data and the model specification. Strong correlations mean the parameters are hard to separate, posing a more difficult task for the samplers. JAGS, which relies on either Gibbs sampling or Metropolis-Hastings, is likely to suffer under such circumstances, while Stan might be expected to perform better. With the present data, we can minimize posterior correlations by centering $x$. Conversely, we can create correlations by moving its mean away from zero. The larger the mean relative to the standard deviation, the harder it will be to separate the constants from the coefficients. The tests below entail two scenarios that differ in this respect. One scenario with **"weak correlations"**: $x_{ij} \sim N(0,1)$, and one with **"strong correlations"**: $x_{ij} \sim N(2,1)$.
+A key issue for MCMC samplers is how strong posterior correlations there are between the parameters, which in turn depends on both the data and the model specification. Strong correlations mean the parameters are hard to separate, posing a more difficult task for Gibbs and Metropolis-Hastings updaters (Roberts and Sahu 1997). JAGS, which relies on either Gibbs sampling or Metropolis-Hastings, is likely to suffer under such circumstances, while Stan might be expected to perform better. With the present data, we can minimize posterior correlations by centering $x$. Conversely, we can create correlations by moving its mean away from zero. The larger the mean relative to the standard deviation, the harder it will be to separate the constants from the coefficients. The tests below entail two scenarios that differ in this respect. One scenario with **"weak correlations"**: $x_{ij} \sim N(0,1)$, and one with **"strong correlations"**: $x_{ij} \sim N(2,1)$.
 
 ### Models
 We will use a likelihood function that accurately reflects the data-generating process. In other words, we have:
@@ -189,9 +189,9 @@ Here is a BibTex-formatted reference, which should work when using the natbib an
 <p>Gelman, Andrew, John B Carlin, Hal S Stern, David B Dunson, Aki Vehtari and Donald B Rubin. 2014. <i>Bayesian Data Analysis.</i> 3rd ed. London: Chapman & Hall/CRC Press.</p>
 <p>Hoffman, Matthew D., and Andrew Gelman. 2014. "<a href="http://www.stat.columbia.edu/~gelman/research/published/nuts.pdf">The No-U-turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo</a>". <i>Journal of Machine Learning Research</i>, 15(1), pp.1593-1623.</p>
 <p>Neal, Radford M. 2011. "<a href="http://www.mcmchandbook.net/HandbookChapter5.pdf">MCMC Using Hamiltonian Dynamics</a>". In Steve Brooks, Andrew Gelman, Galin L. Jones, Xiao-Li Meng. <i>Handbook of Markov Chain Monte Carlo</i>. London: Chapman & Hall/CRC Press.</p>
+<p>Papaspiliopoulos, Omiros, Gareth O. Roberts, and Martin Sköld. 2007. "<a href="https://arxiv.org/pdf/0708.3797.pdf">A general framework for the parametrization of hierarchical models</a>". <i>Statistical Science</i>, 22(1), pp.59-73.</p>
 <p>Plummer, Martyn. 2003. "<a href="https://www.ci.tuwien.ac.at/Conferences/DSC-2003/Proceedings/Plummer.pdf">JAGS: A Program for Analysis of Bayesian Graphical Models Using Gibbs Sampling</a>". In Proceedings of the 3rd International Workshop on Distributed Statistical Computing, Vienna.</p>
-<p>Papaspiliopoulos, Omiros, Gareth O. Roberts, and Martin Sköld. 2007. "<a href="https://arxiv.org/pdf/0708.3797.pdf">A general framework for the parametrization of hierarchical models</a>". <i>Statistical Science</i>, 59-73.</p>
-
+<p>Roberts, Gareth O., and Sujit K Sahu. 1997. "<a href="https://doi.org/10.1214/ss/1030037965">Updating schemes, correlation structure, blocking and parameterization for the Gibbs sampler</a>". <i>Statistical Science</i>, 12(4), pp.287-299.</p>
 </div>
 
 
