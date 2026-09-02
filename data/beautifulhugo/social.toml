@@ -1,0 +1,137 @@
+[[social_icons]]
+id = "email"
+url = "mailto:%s"
+title = "Email me"
+icon = "fa-solid fa-envelope"
+
+[[social_icons]]
+id = "facebook"
+url = "https://www.facebook.com/%s"
+title = "Facebook"
+icon = "fa-brands fa-facebook"
+
+[[social_icons]]
+id = "googleplus"
+url = "https://plus.google.com/%s"
+title = "Google+"
+icon = "fa-brands fa-google-plus-g"
+
+[[social_icons]]
+id = "github"
+url = "https://github.com/%s"
+title = "GitHub"
+icon = "fa-brands fa-github"
+
+[[social_icons]]
+id = "gitlab"
+url = "https://gitlab.com/%s"
+title = "GitLab"
+icon = "fa-brands fa-gitlab"
+
+[[social_icons]]
+id = "bitbucket"
+url = "https://bitbucket.org/%s"
+title = "Bitbucket"
+icon = "fa-brands fa-bitbucket"
+
+[[social_icons]]
+id = "twitter"
+url = "https://x.com/%s"
+title = "X"
+icon = "fa-brands fa-x-twitter"
+
+[[social_icons]]
+id = "bluesky"
+url = "https://bsky.app/profile/%s"
+title = "Bluesky"
+icon = "fa-brands fa-bluesky"
+
+[[social_icons]]
+id = "reddit"
+url = "https://reddit.com/u/%s"
+title = "Reddit"
+icon = "fa-brands fa-reddit-alien"
+
+[[social_icons]]
+id = "linkedin"
+url = "https://linkedin.com/in/%s"
+title = "LinkedIn"
+icon = "fa-brands fa-linkedin"
+
+[[social_icons]]
+id = "xing"
+url = "https://www.xing.com/profile/%s"
+title = "Xing"
+icon = "fa-brands fa-xing"
+
+[[social_icons]]
+id = "stackoverflow"
+url = "https://stackoverflow.com/%s"
+title = "StackOverflow"
+icon = "fa-brands fa-stack-overflow"
+
+[[social_icons]]
+id = "snapchat"
+url = "https://www.snapchat.com/add/%s"
+title = "Snapchat"
+icon = "fa-brands fa-snapchat"
+
+[[social_icons]]
+id = "instagram"
+url = "https://www.instagram.com/%s"
+title = "Instagram"
+icon = "fa-brands fa-instagram"
+
+[[social_icons]]
+id = "youtube"
+url = "https://www.youtube.com/%s"
+title = "Youtube"
+icon = "fa-brands fa-youtube"
+
+[[social_icons]]
+id = "soundcloud"
+url = "https://soundcloud.com/%s"
+title = "SoundCloud"
+icon = "fa-brands fa-soundcloud"
+
+[[social_icons]]
+id = "spotify"
+url = "https://open.spotify.com/user/%s"
+title = "Spotify"
+icon = "fa-brands fa-spotify"
+
+[[social_icons]]
+id = "bandcamp"
+url = "https://%s.bandcamp.com/"
+title = "Bandcamp"
+icon = "fa-brands fa-bandcamp"
+
+[[social_icons]]
+id = "itchio"
+url = "https://itch.io/profile/%s"
+title = "Itch.io"
+icon = "fa-solid fa-gamepad"
+
+[[social_icons]]
+id = "keybase"
+url = "https://keybase.io/%s"
+title = "Keybase"
+icon = "fa-solid fa-key"
+
+[[social_icons]]
+id = "vk"
+url = "https://vk.com/%s"
+title = "VK"
+icon = "fa-brands fa-vk"
+
+[[social_icons]]
+id = "paypal"
+url = "https://paypal.me/%s"
+title = "PayPal"
+icon = "fa-brands fa-paypal"
+
+[[social_icons]]
+id = "telegram"
+url = "https://telegram.me/%s"
+title = "Telegram"
+icon = "fa-brands fa-telegram"

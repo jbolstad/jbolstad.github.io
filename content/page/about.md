@@ -14,7 +14,7 @@ I am an alumnus of the <a href="https://akademietforyngreforskere.no" target="_b
 
 ### Media appearances and outreach
 
-I have appeared regularly on Norwegian TV and radio, and in national newspapers. One of my most visible contributions to the non-academic world is my other webpage, <a href="https://www.estimite.com" target="_blank" rel="noopener">Estimite.com</a>. You can also find me on <a href="https://twitter.com/boelstad" target="_blank" rel="noopener">twitter</a>.
+I have appeared regularly on Norwegian TV and radio, and in national newspapers. One of my most visible contributions to the non-academic world is my other webpage, <a href="https://www.estimite.com" target="_blank" rel="noopener">Estimite.com</a>. You can also find me on <a href="https://x.com/boelstad" target="_blank" rel="noopener">X</a> and <a href="https://bsky.app/profile/boelstad.bsky.social" target="_blank" rel="noopener">Bluesky</a>.
 
 ### Ongoing projects
 

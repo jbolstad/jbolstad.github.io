@@ -58,6 +58,8 @@ ignoreFiles = ["\\.psd$", "\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
   website = "www.boelstad.net"
   email = "j.b [AT] post.harvard.edu"
   twitter = "boelstad"
+  github = "jbolstad"
+  bluesky = "boelstad.bsky.social"
   linkedin = "boelstad"
 
 [markup]
