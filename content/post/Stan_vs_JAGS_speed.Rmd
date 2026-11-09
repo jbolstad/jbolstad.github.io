@@ -22,6 +22,8 @@ For a good while JAGS was your best bet if you wanted to do MCMC on a distributi
 
 The approach taken here is to compare the models in terms of seconds required to produce an effective simulation draw for the parameter with the fewest effective draws. Simulation time is taken to exclude compilation time, but include adaptation and sufficient warm-up for the chains to get into the typical set. The samplers are tested in a hierarchical setting, using six different models. The models differ in terms of pooling, conjugacy, and centered versus non-centered parameterizations. The results are roughly as expected: JAGS exhibits both blazing fast and incredibly slow sampling, while Stan delivers somewhat more stable performance, being relatively efficient also in harder scenarios.
 
+A PDF and replication archive for this note are deposited on Zenodo as a permanent reference: [doi:10.5281/zenodo.24081342](https://doi.org/10.5281/zenodo.24081342).
+
 ### Data
 
 This mini-study generates hierarchical datasets, containing $m$ noisy observations for each of $n$ individuals. For a given individual $i \in \{1, \ldots, n\}$ and trial number $j \in \{1, \ldots, m\}$, we have the observed outcome $y_{ij}$. In addition to $y$, the data contain the covariate $x$, which also varies by $i$ and $j$. The outcome $y$ will have normally distributed, homoskedastic errors, and depend linearly on $x$, according to the following process: $y_{ij} \sim N(\alpha_i + \beta_i x_{ij},\sigma^2)$. Each individual will have its own true intercept, $\alpha_i$, as well as its own coefficient on $x$, $\beta_i$. These individual-specific parameters are in turn drawn from their own distributions: $\alpha_i \sim N(2,1)$, and $\beta_i \sim N(-2,1)$. The code to define the data-generating process (and load necessary packages) is:
@@ -167,18 +169,20 @@ In addition to efficiency, there are other considerations that may be relevant f
 ### How to cite
 <p>This material can be cited as follows:</p>
 <div class="Bib">
-<p>Bølstad, Jørgen. 2019. "How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations". <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/stan_vs_jags_speed/.</p>
+<p>Bølstad, Jørgen. 2019. "How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations". <i>Playing with Numbers: Notes on Bayesian Statistics</i>. <a href="https://doi.org/10.5281/zenodo.24081342">https://doi.org/10.5281/zenodo.24081342</a>. Originally posted at <a href="https://www.boelstad.net/post/stan_vs_jags_speed/">https://www.boelstad.net/post/stan_vs_jags_speed/</a>.</p>
 </div>
 
-Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:
+Here is a BibTeX-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:
 ```{plaintext,eval=FALSE,highlight=FALSE}
 @Misc{boelstad:2019a,
-  Author = {B{\o}lstad, J{\o}rgen},
-  Title = {How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations},
-  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
-  Url = {\url{http://www.boelstad.net/post/stan_vs_jags_speed/}},
-  Year = {2019},
-  Month = {January 2}}
+  author       = {B{\o}lstad, J{\o}rgen},
+  title        = {How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations},
+  howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  year         = {2019},
+  month        = {January 2},
+  doi          = {10.5281/zenodo.24081342},
+  url          = {https://doi.org/10.5281/zenodo.24081342},
+  note         = {Originally posted at \url{https://www.boelstad.net/post/stan_vs_jags_speed/}}}
 ```
 
 ### Further reading

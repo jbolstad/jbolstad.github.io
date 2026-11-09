@@ -11,7 +11,8 @@ tags: ["R", "Bayesian statistics", "Stan"]
 
 
 <p>For a good while JAGS was your best bet if you wanted to do MCMC on a distribution of your own choosing. Then Stan came along, potentially replacing JAGS as the black-box sampler of choice for many Bayesians. But how do they compare in terms of performance? The obvious answer is: It depends. In fact, the question is nearly impossible to answer properly, as any comparison will be conditional on the data, model specifications, test criteria, and more. Nevertheless, this note offers a small simulation study.</p>
-<p>The approach taken here is to compare the models in terms of seconds required to produce an effective simulation draw for the parameter with the least effective draws. Simulation time is taken to exclude compilation time, but include adaptation and sufficient warm-up for the chains to get into the typical set. The samplers are tested in a hierarchical setting, using six different models. The models differ in terms of pooling, conjugacy, and centered versus non-centered parameterizations. The results are roughly as expected: JAGS exhibits both blazing fast and incredibly slow sampling, while Stan delivers somewhat more stable performance, being relatively efficient also in harder scenarios.</p>
+<p>The approach taken here is to compare the models in terms of seconds required to produce an effective simulation draw for the parameter with the fewest effective draws. Simulation time is taken to exclude compilation time, but include adaptation and sufficient warm-up for the chains to get into the typical set. The samplers are tested in a hierarchical setting, using six different models. The models differ in terms of pooling, conjugacy, and centered versus non-centered parameterizations. The results are roughly as expected: JAGS exhibits both blazing fast and incredibly slow sampling, while Stan delivers somewhat more stable performance, being relatively efficient also in harder scenarios.</p>
+<p>A PDF and replication archive for this note are deposited on Zenodo as a permanent reference: <a href="https://doi.org/10.5281/zenodo.24081342">doi:10.5281/zenodo.24081342</a>.</p>
 <div id="data" class="section level3">
 <h3>Data</h3>
 <p>This mini-study generates hierarchical datasets, containing <span class="math inline">\(m\)</span> noisy observations for each of <span class="math inline">\(n\)</span> individuals. For a given individual <span class="math inline">\(i \in \{1, \ldots, n\}\)</span> and trial number <span class="math inline">\(j \in \{1, \ldots, m\}\)</span>, we have the observed outcome <span class="math inline">\(y_{ij}\)</span>. In addition to <span class="math inline">\(y\)</span>, the data contain the covariate <span class="math inline">\(x\)</span>, which also varies by <span class="math inline">\(i\)</span> and <span class="math inline">\(j\)</span>. The outcome <span class="math inline">\(y\)</span> will have normally distributed, homoskedastic errors, and depend linearly on <span class="math inline">\(x\)</span>, according to the following process: <span class="math inline">\(y_{ij} \sim N(\alpha_i + \beta_i x_{ij},\sigma^2)\)</span>. Each individual will have its own true intercept, <span class="math inline">\(\alpha_i\)</span>, as well as its own coefficient on <span class="math inline">\(x\)</span>, <span class="math inline">\(\beta_i\)</span>. These individual-specific parameters are in turn drawn from their own distributions: <span class="math inline">\(\alpha_i \sim N(2,1)\)</span>, and <span class="math inline">\(\beta_i \sim N(-2,1)\)</span>. The code to define the data-generating process (and load necessary packages) is:</p>
@@ -96,17 +97,19 @@ This material can be cited as follows:
 </p>
 <div class="Bib">
 <p>
-Bølstad, Jørgen. 2019. “How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations”. <i>Playing with Numbers: Notes on Bayesian Statistics</i>. www.boelstad.net/post/stan_vs_jags_speed/.
+Bølstad, Jørgen. 2019. “How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations”. <i>Playing with Numbers: Notes on Bayesian Statistics</i>. <a href="https://doi.org/10.5281/zenodo.24081342">https://doi.org/10.5281/zenodo.24081342</a>. Originally posted at <a href="https://www.boelstad.net/post/stan_vs_jags_speed/">https://www.boelstad.net/post/stan_vs_jags_speed/</a>.
 </p>
 </div>
-<p>Here is a BibTex-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:</p>
+<p>Here is a BibTeX-formatted reference, which should work when using the natbib and hyperref packages together with a suitable LaTeX style:</p>
 <pre class="text"><code>@Misc{boelstad:2019a,
-  Author = {B{\o}lstad, J{\o}rgen},
-  Title = {How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations},
-  Howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
-  Url = {\url{http://www.boelstad.net/post/stan_vs_jags_speed/}},
-  Year = {2019},
-  Month = {January 2}}</code></pre>
+  author       = {B{\o}lstad, J{\o}rgen},
+  title        = {How Efficient is Stan Compared to JAGS? Conjugacy, Pooling, Centering, and Posterior Correlations},
+  howpublished = {Playing with Numbers: Notes on Bayesian Statistics},
+  year         = {2019},
+  month        = {January 2},
+  doi          = {10.5281/zenodo.24081342},
+  url          = {https://doi.org/10.5281/zenodo.24081342},
+  note         = {Originally posted at \url{https://www.boelstad.net/post/stan_vs_jags_speed/}}}</code></pre>
 </div>
 <div id="further-reading" class="section level3">
 <h3>Further reading</h3>
